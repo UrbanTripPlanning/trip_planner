@@ -1,18 +1,17 @@
 import geopandas as gpd
 import pandas as pd
 import matplotlib.pyplot as plt
-# from PIL import Image
 import logging
 from datetime import datetime
 import os
 
 # Configure logging to save to a file
-os.makedirs("log", exist_ok=True)  # Create logging directory if it doesn't exist
+os.makedirs("output", exist_ok=True)  # Create logging directory if it doesn't exist
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler(f"log/export_file_analysis_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.log"),
+        logging.FileHandler(f"output/export_file_analysis_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.log"),
         logging.StreamHandler()
     ]
 )
