@@ -1,0 +1,85 @@
+2025-03-18 13:36:57,643 - INFO - 
+1) --- Processing Shapefile ---
+2025-03-18 13:36:57,933 - INFO - File Type: Main shapefile.
+2025-03-18 13:36:57,934 - INFO - Represents a road network as a series of LINESTRING geometries.
+2025-03-18 13:36:57,934 - INFO - Each segment connects two nodes (tail and head) and represents a specific road segment.
+2025-03-18 13:36:57,934 - INFO - Number of geometries: 2579
+2025-03-18 13:36:57,934 - INFO - Columns in shapefile: Index(['idno', 'tail', 'head', 'leng', 'lane', 'geometry'], dtype='object')
+2025-03-18 13:36:57,934 - INFO - Example of a segment's geometry:
+2025-03-18 13:36:57,934 - INFO - LINESTRING (7.68235 45.07484, 7.6829 45.07463)
+2025-03-18 13:36:57,935 - INFO - Utility: Spatial representation of the road network for geospatial analysis and GIS visualization.
+2025-03-18 13:36:58,092 - INFO - Plot saved as 'road_network_visualization.png'.
+2025-03-18 13:36:58,092 - INFO - 
+2) --- Processing .dbf File ---
+2025-03-18 13:36:58,109 - INFO - File Type: Tabular file accompanying the .shp.
+2025-03-18 13:36:58,109 - INFO - Provides descriptive alphanumeric data for each road segment.
+2025-03-18 13:36:58,109 - INFO - Main columns include 'idno', 'tail', 'head', 'leng', and 'lane'.
+2025-03-18 13:36:58,109 - INFO - Number of rows in .dbf: 2579
+2025-03-18 13:36:58,110 - INFO - Columns in .dbf: Index(['idno', 'tail', 'head', 'leng', 'lane', 'geometry'], dtype='object')
+2025-03-18 13:36:58,110 - INFO - Data Statistics:
+2025-03-18 13:36:58,110 - INFO - Average length: 50.88 units.
+2025-03-18 13:36:58,110 - INFO - Average number of lanes: 1.44.
+2025-03-18 13:36:58,110 - INFO - Example of a row:
+2025-03-18 13:36:58,110 - INFO - idno                                             892058820
+tail                                              65181913
+head                                             929221967
+leng                                                    49
+lane                                                     1
+geometry    LINESTRING (7.68235 45.07484, 7.6829 45.07463)
+Name: 0, dtype: object
+2025-03-18 13:36:58,111 - INFO - Utility: Basis for road capacity calculations and tabular analysis.
+2025-03-18 13:36:58,111 - INFO - 
+3) --- Processing .shx File ---
+2025-03-18 13:36:58,111 - INFO - File Type: Spatial index file.
+2025-03-18 13:36:58,111 - INFO - Optimized structure enabling quick access to geometries in the .shp file.
+2025-03-18 13:36:58,111 - INFO - .shx file './export_5t/RR_SVR_intersezione_area_studio_Polito_ridotto.shx' successfully loaded.
+2025-03-18 13:36:58,111 - INFO - Utility: Improves efficiency during GIS analysis and visualization.
+2025-03-18 13:36:58,111 - INFO - 
+4) --- Processing .cpg File ---
+2025-03-18 13:36:58,111 - INFO - File Type: Encoding information file.
+2025-03-18 13:36:58,111 - INFO - Specifies character encoding for text data: UTF-8
+2025-03-18 13:36:58,111 - INFO - 
+5) --- Processing .prj File ---
+2025-03-18 13:36:58,111 - INFO - File Type: Geographic reference system file.
+2025-03-18 13:36:58,111 - INFO - Specifies the WGS 1984 coordinate system.
+2025-03-18 13:36:58,111 - INFO - Projection information:
+2025-03-18 13:36:58,111 - INFO - GEOGCS["GCS_WGS_1984",DATUM["D_WGS_1984",SPHEROID["WGS_1984",6378137.0,298.257223563]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]]
+2025-03-18 13:36:58,111 - INFO - 
+6) --- Processing .qmd File ---
+2025-03-18 13:36:58,112 - INFO - File Type: GIS project file.
+2025-03-18 13:36:58,112 - INFO - May contain style configurations and display settings.
+2025-03-18 13:36:58,112 - INFO - Loaded successfully for QGIS project customization.
+2025-03-18 13:36:58,112 - INFO - 
+7) --- Processing Network CSV ---
+2025-03-18 13:36:58,115 - INFO - File Type: CSV file with road network information.
+2025-03-18 13:36:58,115 - INFO - Replicates data from the .dbf file.
+2025-03-18 13:36:58,115 - INFO - Number of rows in network CSV: 2579
+2025-03-18 13:36:58,115 - INFO - Columns in network CSV: Index(['idno', 'tail', 'head'], dtype='object')
+2025-03-18 13:36:58,115 - INFO - Utility: Alternative tabular representation of network data.
+2025-03-18 13:36:58,115 - WARNING - Network CSV has additional or missing columns compared to the .dbf file.
+2025-03-18 13:36:58,115 - INFO - 
+8) --- Processing Velocity CSV ---
+2025-03-18 13:36:58,142 - INFO - File Type: CSV file with traffic data.
+2025-03-18 13:36:58,142 - INFO - Contains average velocities for each road segment.
+2025-03-18 13:36:58,142 - INFO - Number of rows in velocity CSV: 61896
+2025-03-18 13:36:58,142 - INFO - Columns in velocity CSV: Index(['idno', 'tail', 'head', 'ora', 'vel_media'], dtype='object')
+2025-03-18 13:36:58,142 - INFO - Utility: Road performance analysis and identification of congested segments.
+2025-03-18 13:36:58,142 - INFO - --- Merging Network and Velocity Data ---
+2025-03-18 13:36:58,376 - INFO - Number of rows after merge: 85560
+2025-03-18 13:36:58,377 - INFO - Merged Data Preview:
+2025-03-18 13:36:58,377 - INFO -         idno    tail_x     head_x    tail_y     head_y  ora  vel_media
+0  892058820  65181913  929221967  65181913  929221967    0         30
+1  892058820  65181913  929221967  65181913  929221967    1         30
+2  892058820  65181913  929221967  65181913  929221967    2         30
+3  892058820  65181913  929221967  65181913  929221967    3         30
+4  892058820  65181913  929221967  65181913  929221967    4         30
+2025-03-18 13:36:58,395 - INFO - 
+--- Summary ---
+2025-03-18 13:36:58,396 - INFO - 1. Shapefile: Contains road network geometries and attributes.
+2025-03-18 13:36:58,396 - INFO - 2. .dbf File: Provides detailed attributes like segment length, lanes, and node connectivity.
+2025-03-18 13:36:58,396 - INFO - 3. .shx File: Spatial index used internally by GIS software.
+2025-03-18 13:36:58,396 - INFO - 4. .cpg File: Specifies character encoding for text data.
+2025-03-18 13:36:58,396 - INFO - 5. .prj File: Defines the projection system for spatial data.
+2025-03-18 13:36:58,396 - INFO - 6. QGIS Project (.qmd): Contains metadata for project configurations.
+2025-03-18 13:36:58,396 - INFO - 7. Network CSV: Alternative tabular representation of network data.
+2025-03-18 13:36:58,396 - INFO - 8. Velocity CSV: Contains traffic data, specifically average velocities on road segments.
