@@ -1,7 +1,10 @@
 import os
+import math
 import logging
 from datetime import datetime
 from dotenv import load_dotenv
+from functools import lru_cache
+from typing import Tuple
 
 
 def setup_logger_and_check_folders():
@@ -23,3 +26,22 @@ def read_env():
             f"Error with reading the '.env' file in the root folder: {e}")  # Handle file not found specifically
     except Exception as e:
         print(f"An unexpected error occurred: {e}")  # Catch other exceptions
+
+
+def get_hour(time: datetime = None):
+    if time is None:
+        time = datetime.now()
+    current_hour = (time.hour + (1 if time.minute >= 50 else 0)) % 24
+    return current_hour
+
+
+@lru_cache(maxsize=None)
+def euclidean_distance(p1: Tuple[float, float], p2: Tuple[float, float]) -> float:
+    """
+    Calculate the Euclidean distance between two points.
+
+    :param p1: Tuple (x, y) representing the first point.
+    :param p2: Tuple (x, y) representing the second point.
+    :return: Euclidean distance.
+    """
+    return math.hypot(p1[0] - p2[0], p1[1] - p2[1])

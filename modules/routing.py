@@ -1,186 +1,196 @@
 import os
 import time
-import math
+import json
 import logging
 import networkx as nx
-import geopandas as gpd
 import matplotlib.pyplot as plt
-from functools import lru_cache
-from typing import Tuple, Optional, List
+from enum import Enum
+from datetime import datetime, timedelta
+from typing import Tuple, Optional, List, Dict
 
-from modules.compute_weights import ComputeWeights
-
-
-@lru_cache(maxsize=None)
-def euclidean_distance(p1: Tuple[float, float], p2: Tuple[float, float]) -> float:
-    """
-    Calculate the Euclidean distance between two points.
-
-    :param p1: Tuple (x, y) representing the first point.
-    :param p2: Tuple (x, y) representing the second point.
-    :return: Euclidean distance.
-    """
-    return math.hypot(p1[0] - p2[0], p1[1] - p2[1])
+from modules.road_network import RoadNetwork
+from utils import euclidean_distance
 
 
-class RoadNetwork:
-    """
-    Class to manage a road network loaded from a MongoDB collection via the asynchronous Database module.
+class TransportMode(Enum):
+    FOOT = ('Foot', 5 / 3.6)  # 5 km/h in m/s
+    BIKE = ('Bike', 15 / 3.6)  # 15 km/h in m/s
+    CAR = ('Car', None)  # For Car, we use the 'car_travel_time' field
 
-    Handles:
-      - Asynchronous initialization of the database connection.
-      - Creating a GeoDataFrame from road data.
-      - Building a NetworkX graph from road geometries.
-      - Computing the shortest paths using Dijkstra and A* algorithms.
-      - Visualizing the graph with highlighted paths.
-    """
+    def __init__(self, mode_name: str, default_speed: Optional[float]):
+        self.mode_name = mode_name
+        self.default_speed = default_speed
 
-    def __init__(self, collection_name: str) -> None:
+    def __str__(self):
+        return self.mode_name
+
+
+class RoutePlanner:
+    def __init__(self, network: RoadNetwork, transport_mode: TransportMode = TransportMode.FOOT, algorithm: str = 'A*'):
         """
-        Initialize the RoadNetwork instance.
+        Initialize the RoutePlanner.
 
-        :param collection_name: Collection name containing road data.
+        :param network: Instance of RoadNetwork.
+        :param transport_mode: Transport mode (TransportMode Enum).
+        :param algorithm: Algorithm to use ('A*' or 'Dijkstra').
         """
-        self.collection_name = collection_name
-        self.gdf: Optional[gpd.GeoDataFrame] = None
-        self.graph: Optional[nx.Graph] = None
+        self.network = network
+        self.graph = network.graph
+        self.transport_mode = transport_mode
+        self.algorithm = algorithm
+        logging.info(
+            f"Initialized RoutePlanner with transport_mode: {self.transport_mode.mode_name}, algorithm: {self.algorithm}")
 
-    async def async_init(self):
+    def compute(
+            self,
+            source_point: Tuple[float, float],
+            target_point: Tuple[float, float]
+    ) -> Tuple[Optional[List[Tuple[float, float]]], Optional[float]]:
         """
-        Asynchronously initialize the database connection, load road data,
-        and build the NetworkX graph.
-        """
-        cw = ComputeWeights()
-        # Initialize the asynchronous DB connection
-        await cw.initialize_db()
-        # Query and load data from all collections (only road data is available)
-        await cw.load_all_data()
-        # Process and merge the data into one GeoDataFrame (only road data used)
-        cw.merge_data()
-        self.gdf = cw.get_geo_dataframe()
-        # Build the graph from the GeoDataFrame
-        self.build_graph()
+        Compute the route between source_point and target_point.
 
-    def build_graph(self) -> None:
-        """
-        Build a NetworkX graph from the GeoDataFrame.
-        For each record with a LineString geometry, extract the start and end points,
-        and add an edge with a weight based on the 'leng' attribute (if present) or the geometry's length.
-        """
-        self.graph = nx.Graph()
-        try:
-            for _, row in self.gdf.iterrows():
-                geom = row['geometry']
-                if geom.geom_type == 'LineString':
-                    start = tuple(geom.coords[0])
-                    end = tuple(geom.coords[-1])
-                    weight = row.get('leng', geom.length)
-                    self.graph.add_edge(start, end, weight=weight)
-            logging.info(f"Graph built with {self.graph.number_of_nodes()} nodes and {self.graph.number_of_edges()} edges.")
-        except Exception as e:
-            logging.error(f"Error building graph: {e}")
-            raise
+        The cost attribute is chosen based on the transport mode:
+          - For Car: use 'car_travel_time'
+          - For Foot/Bike: use 'length'
 
-    def find_nearest_node(self, point: Tuple[float, float]) -> Tuple[float, float]:
+        Returns the computed path (a list of nodes) and the execution time.
         """
-        Find the node in the graph closest to the given point using Euclidean distance.
+        # Select cost attribute based on transport mode.
+        if self.transport_mode == TransportMode.CAR:
+            cost = 'car_travel_time'
+            logging.info("Using cost attribute 'car_travel_time' for Car mode.")
+        else:
+            cost = 'length'
+            logging.info("Using cost attribute 'length' for Foot/Bike mode.")
 
-        :param point: Tuple (x, y) representing the query point.
-        :return: The nearest node (x, y) in the graph.
-        """
-        nearest: Optional[Tuple[float, float]] = None
-        min_dist = float('inf')
-        for node in self.graph.nodes():
-            dist = euclidean_distance(node, point)
-            if dist < min_dist:
-                min_dist = dist
-                nearest = node
-        if nearest is None:
-            raise ValueError("No node found in the graph.")
-        return nearest
+        # Ensure the source and target nodes exist; if not, use the nearest node.
+        source = self.network.ensure_node(source_point)
+        target = self.network.ensure_node(target_point)
+        logging.info(f"Computed source node: {source}, target node: {target}")
 
-    def _ensure_node(self, point: Tuple[float, float]) -> Tuple[float, float]:
-        """
-        Ensure that the point is a node in the graph. If not, return the nearest node.
+        start_time_compute = time.perf_counter()
 
-        :param point: Tuple (x, y) representing the point.
-        :return: A node (x, y) present in the graph.
-        """
-        if point not in self.graph.nodes():
-            nearest = self.find_nearest_node(point)
-            logging.info(f"Point {point} not found among nodes. Using nearest node: {nearest}")
-            return nearest
-        return point
+        # Compute the route using the selected algorithm.
+        if self.algorithm.lower() == 'dijkstra':
+            try:
+                path = nx.dijkstra_path(self.graph, source, target, weight=cost)
+                logging.info(f"Dijkstra route found: {path}")
+            except nx.NetworkXNoPath:
+                logging.error("No route found using Dijkstra.")
+                return None, None
+        else:
+            # Use A* algorithm by default.
+            def heuristic(u: Tuple[float, float], v: Tuple[float, float]) -> float:
+                return euclidean_distance(u, v)
 
-    def compute_dijkstra(self, source_point: Tuple[float, float], target_point: Tuple[float, float]) -> Tuple[Optional[List[Tuple[float, float]]], Optional[float]]:
-        """
-        Compute the shortest path using Dijkstra's algorithm.
-        If the source or target points are not present, they are replaced with the nearest nodes.
+            try:
+                path = nx.astar_path(self.graph, source, target, heuristic=heuristic, weight=cost)
+                logging.info(f"A* route found: {path}")
+            except nx.NetworkXNoPath:
+                logging.error("No route found using A*.")
+                return None, None
 
-        :param source_point: Tuple (x, y) for the source.
-        :param target_point: Tuple (x, y) for the target.
-        :return: A tuple containing the path (list of nodes) and the execution time in seconds.
-        """
-        source = self._ensure_node(source_point)
-        target = self._ensure_node(target_point)
-
-        start_time = time.perf_counter()
-        try:
-            path = nx.dijkstra_path(self.graph, source, target, weight="weight")
-            logging.info(f"Dijkstra path found: {path}")
-        except nx.NetworkXNoPath:
-            logging.error("No path found using Dijkstra's algorithm.")
-            return None, None
-        exec_time = time.perf_counter() - start_time
-        logging.info(f"Dijkstra execution time: {exec_time:.6f} seconds")
+        exec_time = time.perf_counter() - start_time_compute
+        logging.info(f"Route computation time: {exec_time:.6f} seconds using {self.algorithm.capitalize()}")
         return path, exec_time
 
-    def compute_astar(self, source_point: Tuple[float, float], target_point: Tuple[float, float]) -> Tuple[Optional[List[Tuple[float, float]]], Optional[float]]:
+    def plot_path(self, path: Optional[List[Tuple[float, float]]], path_color: str = "black") -> None:
         """
-        Compute the shortest path using the A* algorithm with Euclidean distance as the heuristic.
-        If the source or target points are not present, they are replaced with the nearest nodes.
-
-        :param source_point: Tuple (x, y) for the source.
-        :param target_point: Tuple (x, y) for the target.
-        :return: A tuple containing the path (list of nodes) and the execution time in seconds.
-        """
-        source = self._ensure_node(source_point)
-        target = self._ensure_node(target_point)
-
-        # Define the heuristic function explicitly
-        def heuristic(u: Tuple[float, float], v: Tuple[float, float]) -> float:
-            return euclidean_distance(u, v)
-
-        start_time = time.perf_counter()
-        try:
-            path = nx.astar_path(self.graph, source, target, heuristic=heuristic, weight="weight")
-            logging.info(f"A* path found: {path}")
-        except nx.NetworkXNoPath:
-            logging.error("No path found using A* algorithm.")
-            return None, None
-        exec_time = time.perf_counter() - start_time
-        logging.info(f"A* execution time: {exec_time:.6f} seconds")
-        return path, exec_time
-
-    def plot_path(self, path: Optional[List[Tuple[float, float]]], title: str, filename: str, path_color: str = "red") -> None:
-        """
-        Plot the road network and highlight the specified path, then save the plot.
-
-        :param path: List of nodes representing the path.
-        :param title: Title for the plot.
-        :param filename: File name to save the plot.
-        :param path_color: Color to highlight the path.
+        Plot the computed route on the network graph and save the plot.
         """
         pos = {node: node for node in self.graph.nodes()}
         plt.figure(figsize=(10, 8))
-        # Draw network edges in light gray
+        # Draw background network edges and nodes.
         nx.draw_networkx_edges(self.graph, pos, edge_color='lightgray', width=1)
         nx.draw_networkx_nodes(self.graph, pos, node_size=5, node_color='lightgray')
+        # Highlight the route.
         if path:
             path_edges = list(zip(path, path[1:]))
             nx.draw_networkx_edges(self.graph, pos, edgelist=path_edges, edge_color=path_color, width=3)
             nx.draw_networkx_nodes(self.graph, pos, nodelist=path, node_color=path_color, node_size=20)
+        title = f"Best Path with {self.algorithm.capitalize()} - {self.transport_mode}"
         plt.title(title)
+        filename = f'best_path_{self.transport_mode.mode_name.lower()}.png'
         plt.savefig(os.path.join(os.getenv("CURRENT_OUT_PATH"), filename))
-        logging.info(f"Graph image saved as '{filename}'.")
-        plt.close()  # Free the resources used by the plot
+        logging.info(f"Graph image saved as '{filename}' in directory '{os.getenv('CURRENT_OUT_PATH')}'")
+        plt.close()
+
+    def get_statistics(
+            self,
+            path: List[Tuple[float, float]],
+            start_time: Optional[datetime] = None,
+            end_time: Optional[datetime] = None
+    ) -> Dict[str, float]:
+        """
+        Calculate route statistics by summing up edge attributes.
+
+        For Car mode: sums the 'car_travel_time' values.
+        For Foot/Bike mode: calculates travel time using the default speed.
+
+        Depending on the time parameters provided:
+          - If only start_time is provided: compute arrival time.
+          - If only end_time is provided: compute the latest departure time.
+          - If both are None: use current time as departure.
+
+        Returns a dictionary with keys:
+          - 'length': total route length,
+          - 'duration': total travel duration,
+          - and time information (start_time, end_time, deadline, or time margin).
+        """
+        stats = {'length': 0, 'duration': 0}
+        # Iterate through each consecutive pair of nodes in the path.
+        for i in range(len(path) - 1):
+            u, v = path[i], path[i + 1]
+            edge_data = self.graph.get_edge_data(u, v)
+            length = edge_data.get('length', 0)
+            if self.transport_mode == TransportMode.CAR:
+                travel_time = edge_data.get('car_travel_time', 0)
+            else:
+                default_speed = self.transport_mode.default_speed
+                travel_time = length / default_speed if default_speed else 0
+            stats['length'] += length
+            stats['duration'] += travel_time
+            logging.debug(f"Edge {u} -> {v}: length = {length}, travel_time = {travel_time}")
+
+        # Case: Only start_time provided.
+        if start_time is not None and end_time is None:
+            computed_end = start_time + timedelta(seconds=stats['duration'])
+            stats['start_time'] = start_time.strftime('%Y-%m-%d %H:%M:%S')
+            stats['end_time'] = computed_end.strftime('%Y-%m-%d %H:%M:%S')
+            logging.info(f"Computed arrival time: {stats['end_time']} from departure at: {stats['start_time']}")
+        # Case: Only end_time provided.
+        elif end_time is not None and start_time is None:
+            computed_start = end_time - timedelta(seconds=stats['duration'])
+            stats['start_time'] = computed_start.strftime('%Y-%m-%d %H:%M:%S')
+            stats['end_time'] = end_time.strftime('%Y-%m-%d %H:%M:%S')
+            logging.info(f"Computed departure time: {stats['start_time']} to meet deadline: {stats['end_time']}")
+        # Case: Neither provided (use current time).
+        elif start_time is None and end_time is None:
+            current_time = datetime.now()
+            computed_end = current_time + timedelta(seconds=stats['duration'])
+            stats['start_time'] = current_time.strftime('%Y-%m-%d %H:%M:%S')
+            stats['end_time'] = computed_end.strftime('%Y-%m-%d %H:%M:%S')
+            logging.info("No start_time or end_time provided; using current time as departure time.")
+
+        # Round numeric values for clarity.
+        for key, value in stats.items():
+            if isinstance(value, (int, float)):
+                stats[key] = round(value, 2)
+        logging.info(f"Final route statistics: {stats}")
+        return stats
+
+    def display_statistics(
+            self,
+            path: List[Tuple[float, float]],
+            start_time: Optional[datetime] = None,
+            end_time: Optional[datetime] = None
+    ) -> None:
+        """
+        Display and log the computed route statistics.
+        """
+        stats = self.get_statistics(path, start_time, end_time)
+        stats_json = json.dumps(stats, indent=4)
+        logging.info("Displaying route statistics:")
+        logging.info(stats_json)
+        print(f'{self.transport_mode} statistics:')
+        print(stats_json)
