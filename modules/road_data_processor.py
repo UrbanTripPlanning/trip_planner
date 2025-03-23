@@ -2,6 +2,7 @@ import logging
 import os
 import pandas as pd
 import geopandas as gpd
+from datetime import datetime
 from shapely.geometry import shape
 from typing import Optional, List, Dict, Any
 
@@ -22,7 +23,7 @@ class RoadDataProcessor:
         """
         self.road_data: Optional[List[dict]] = None
         self.traffic_data: Optional[List[dict]] = None
-        self.weather_data: Optional[List[dict]] = None
+        self.weather_data: Optional[pd.DataFrame] = None
         self.geo_df: Optional[gpd.GeoDataFrame] = None
         logging.info("RoadDataProcessor instance created.")
 
@@ -71,16 +72,18 @@ class RoadDataProcessor:
     async def load_all_data(self, start_time=None, end_time=None) -> None:
         """
         Load data asynchronously from the 'road', 'weather', and 'traffic' collections.
-
-        Logs the number of documents loaded for each dataset.
         """
         logging.info("Starting to load all data (road, traffic, weather).")
         self.road_data = await self._query_road_data()
         logging.info(f"Loaded {len(self.road_data)} road documents.")
-        self.traffic_data = await self._query_traffic_data(start_time, end_time)
-        logging.info(f"Loaded {len(self.traffic_data)} traffic documents.")
-        self.weather_data = []  # Alternatively, load weather data if needed.
-        logging.info("Weather data not loaded; set to empty list.")
+        self.weather_data = self.process_weather_data(start_time, end_time)
+        logging.info(f"Loaded weather data.")
+        if self.weather_data['rain'] == 0:
+            self.traffic_data = await self._query_traffic_data(start_time, end_time)
+            logging.info(f"Loaded {len(self.traffic_data)} traffic documents.")
+        else:  # todo: query to other 5t traffic data
+            self.traffic_data = await self._query_traffic_data(start_time, end_time)
+            logging.info(f"Loaded {len(self.traffic_data)} traffic documents.")
 
     async def _query_road_data(self):
         """
@@ -120,13 +123,29 @@ class RoadDataProcessor:
         return documents
 
     @staticmethod
+    def process_weather_data(start_time, end_time) -> pd.DataFrame:
+        weather_file_path = os.path.join(os.getenv('DATA_PATH'), "weather.csv")
+        df = pd.read_csv(weather_file_path)
+        df.set_index('datetime', inplace=True)
+        df.index = pd.to_datetime(df.index)
+
+        if start_time is not None:
+            time = start_time
+        elif end_time is not None:
+            time = end_time
+        elif start_time is None and end_time is None:
+            time = datetime.now()
+
+        pos = df.index.get_indexer([time], method='nearest')[0]
+        closest_row = df.iloc[pos]
+
+        return closest_row
+
+    @staticmethod
     def process_road_data(documents: List[dict]) -> gpd.GeoDataFrame:
         """
         Process road collection documents into a GeoDataFrame.
         Converts GeoJSON geometry to shapely objects.
-
-        :param documents: List of road documents.
-        :return: A GeoDataFrame containing the processed road data.
         """
         if not documents:
             logging.warning("No road documents to process.")
@@ -143,9 +162,6 @@ class RoadDataProcessor:
         """
         Process traffic collection documents into a GeoDataFrame.
         Renames the '_id' column to 'road_id' for merging purposes.
-
-        :param documents: List of traffic documents.
-        :return: A GeoDataFrame containing the processed traffic data.
         """
         if not documents:
             logging.warning("No traffic documents to process.")
@@ -158,15 +174,11 @@ class RoadDataProcessor:
     def build_network_geodataframe(self) -> Optional[gpd.GeoDataFrame]:
         """
         Process and merge road, traffic, and weather data into a single GeoDataFrame for the network.
-
-        - Processes road data and traffic data separately.
-        - Merges traffic data into the road GeoDataFrame if the common key 'road_id' exists.
-
-        :return: A merged GeoDataFrame ready for graph construction.
         """
-        logging.info("Building network GeoDataFrame from road and traffic data.")
+        logging.info("Building network GeoDataFrame from road and. traffic data, and weather data.")
         road_gdf = self.process_road_data(self.road_data)
         traffic_df = self.process_traffic_data(self.traffic_data)
+        weather_df = self.weather_data
 
         if 'road_id' in road_gdf.columns:
             if not traffic_df.empty and 'road_id' in traffic_df.columns:
@@ -176,5 +188,10 @@ class RoadDataProcessor:
                 logging.info("Traffic data is empty or missing 'road_id'; skipping merge.")
         else:
             logging.warning("Common key 'road_id' not found in road data; merge skipped.")
+
+        if not weather_df.empty:
+            road_gdf['weather_condition'] = weather_df['weather_condition']
+        else:
+            logging.warning("Empy weather data; skipping merge.")
 
         return road_gdf

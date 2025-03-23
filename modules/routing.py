@@ -172,6 +172,9 @@ class RoutePlanner:
             stats['end_time'] = computed_end.strftime('%Y-%m-%d %H:%M:%S')
             logging.info("No start_time or end_time provided; using current time as departure time.")
 
+        # weather
+        stats['weather_condition'] = edge_data.get('weather_condition', 'empty')
+
         # Round numeric values for clarity.
         for key, value in stats.items():
             if isinstance(value, (int, float)):

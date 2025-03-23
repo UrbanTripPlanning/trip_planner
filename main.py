@@ -20,9 +20,11 @@ setup_logger_and_check_folders()
 from datetime import datetime
 from modules.road_network import RoadNetwork
 from modules.routing import RoutePlanner, TransportMode
+from modules.weather import WeatherClient
 
 
 async def main():
+
     # Settings
     algorithm = 'A*'  # 'A*' or 'Dijkstra'
     start_time = None  # Planned departure datetime; None means immediate departure.

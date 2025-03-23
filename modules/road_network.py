@@ -75,9 +75,18 @@ class RoadNetwork:
                     # Calculate car travel time if average speed is provided.
                     car_avg_speed = row.get('avgSpeed', 0)
                     car_travel_time = length / (car_avg_speed / 3.6) if car_avg_speed != 0 else 0
-                    self.graph.add_edge(start, end, length=length, car_travel_time=car_travel_time)
+                    # Add weather information
+                    weather_condition = row.get('weather_condition', 'empty')
+                    self.graph.add_edge(
+                        start,
+                        end,
+                        length=length,
+                        car_travel_time=car_travel_time,
+                        weather_condition=weather_condition
+                    )
                     logging.debug(
-                        f"Edge added from {start} to {end}: length={length}, car_travel_time={car_travel_time}")
+                        f"Edge added from {start} to {end}: length={length}, car_travel_time={car_travel_time}, "
+                        f"weather_condition={weather_condition}")
             logging.info(
                 f"Graph built with {self.graph.number_of_nodes()} nodes and {self.graph.number_of_edges()} edges.")
         except Exception as e:
