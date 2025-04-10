@@ -191,6 +191,7 @@ class RoadDataProcessor:
 
         if not weather_df.empty:
             road_gdf['weather_condition'] = weather_df['weather_condition']
+            road_gdf['rain'] = weather_df['rain']
         else:
             logging.warning("Empy weather data; skipping merge.")
 

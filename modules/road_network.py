@@ -1,9 +1,8 @@
 import datetime
 import logging
+from typing import Tuple, Optional
 import networkx as nx
 import geopandas as gpd
-from typing import Tuple, Optional
-
 from modules.road_data_processor import RoadDataProcessor
 from utils import euclidean_distance
 
@@ -29,9 +28,9 @@ class RoadNetwork:
 
     async def async_init(
             self,
-            start_time: datetime.datetime = None,
-            end_time: datetime.datetime = None
-    ):
+            start_time: Optional[datetime.datetime] = None,
+            end_time: Optional[datetime.datetime] = None
+    ) -> None:
         """
         Asynchronously initialize the database connection, load road data,
         and build the NetworkX graph.
@@ -67,31 +66,56 @@ class RoadNetwork:
             for index, row in self.gdf.iterrows():
                 geom = row['geometry']
                 # Process only LineString geometries.
-                if geom.geom_type == 'LineString':
-                    start = tuple(geom.coords[0])
-                    end = tuple(geom.coords[-1])
-                    # Use provided 'length' if available; otherwise, compute from geometry.
-                    length = row.get('length', geom.length)
-                    # Calculate car travel time if average speed is provided.
-                    car_avg_speed = row.get('avgSpeed', 0)
-                    car_travel_time = length / (car_avg_speed / 3.6) if car_avg_speed != 0 else 0
-                    # Add weather information
-                    weather_condition = row.get('weather_condition', 'empty')
-                    self.graph.add_edge(
-                        start,
-                        end,
-                        length=length,
-                        car_travel_time=car_travel_time,
-                        weather_condition=weather_condition
-                    )
-                    logging.debug(
-                        f"Edge added from {start} to {end}: length={length}, car_travel_time={car_travel_time}, "
-                        f"weather_condition={weather_condition}")
+                if geom.geom_type != 'LineString':
+                    continue
+                start = tuple(geom.coords[0])
+                end = tuple(geom.coords[-1])
+                # Use provided 'length' if available; otherwise, compute from geometry.
+                length = row.get('length', geom.length)
+                # Road classification based on number of lane
+                lane: int = row.get('lane', 1)
+                # Check if it is raining
+                rain: float = row.get('rain', 0)
+                # Calculate penalty based on the number of lane
+                penalty = self._compute_penalty(lane)
+                # Calculate car travel time if average speed is provided.
+                default_car_avg_speed = row.get('avgSpeed', 0)
+                car_avg_speed = default_car_avg_speed
+                if rain:
+                    car_avg_speed = default_car_avg_speed - penalty
+                car_travel_time = length / (car_avg_speed / 3.6) if car_avg_speed > 0 else 0
+                # Get weather condition
+                weather_condition = row.get('weather_condition', 'empty')
+                self.graph.add_edge(
+                    start,
+                    end,
+                    length=length,
+                    car_travel_time=car_travel_time,
+                    weather_condition=weather_condition
+                )
+                logging.debug(
+                    f"Edge aggiunto da {start} a {end}: length={length}, "
+                    f"car_travel_time={car_travel_time}, weather_condition={weather_condition}"
+                )
             logging.info(
                 f"Graph built with {self.graph.number_of_nodes()} nodes and {self.graph.number_of_edges()} edges.")
         except Exception as e:
             logging.error(f"Error building graph: {e}")
             raise
+
+    @staticmethod
+    def _compute_penalty(lane: int) -> int:
+        """
+        Calcola una penalità basata sul numero di corsie.
+        :param lane: Numero di corsie nel segmento.
+        :return: Valore di penalità.
+        """
+        if lane == 1:
+            return 8
+        elif lane == 2:
+            return 12
+        else:
+            return 20
 
     def _find_nearest_node(self, point: Tuple[float, float]) -> Tuple[float, float]:
         """
