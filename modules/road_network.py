@@ -1,152 +1,127 @@
-import datetime
+import os
 import logging
-from typing import Tuple, Optional
 import networkx as nx
 import geopandas as gpd
+import pandas as pd
+import torch
+
+from datetime import datetime
+from typing import Tuple, Optional
+
 from modules.road_data_processor import RoadDataProcessor
+from modules.inferer import prepare_feature_vector, predict_travel_time, load_model_and_scalers
 from utils import euclidean_distance
+
+MIN_SPEED_KMH = 0.1  # km/h floor to avoid division-by-zero
+FEATURE_KEYS = ["length", "hour", "lane", "rain", "avgSpeed"]
 
 
 class RoadNetwork:
     """
-    Class to manage a road network loaded from a MongoDB collection via the asynchronous Database module.
-
-    Handles:
-      - Asynchronous initialization of the database connection.
-      - Creating a GeoDataFrame from road data.
-      - Building a NetworkX graph from road geometries.
+    Manages a road network:
+      - async init via RoadDataProcessor
+      - optionally runs GNN inference to produce per-edge travel times
+      - builds a NetworkX graph with either formula-based or model-based travel times
     """
+    DATA_PATH: str = os.getenv("DATA_PATH", ".")
 
-    def __init__(self) -> None:
-        """
-        Initialize the RoadNetwork instance.
-        """
+    def __init__(self, use_gnn_weights: bool = False) -> None:
+        self.use_gnn_weights = use_gnn_weights
+        self.processor: Optional[RoadDataProcessor] = None
         self.gdf: Optional[gpd.GeoDataFrame] = None
         self.graph: Optional[nx.Graph] = None
-        self.processor = RoadDataProcessor()
-        logging.info("RoadNetwork instance created. Processor initialized.")
+
+        # Initialize GNN model and scalers if requested
+        if self.use_gnn_weights:
+            self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+            self.model, self.feature_scaler, self.target_scaler = (
+                load_model_and_scalers("./GCN/models", self.device)
+            )
+            logging.info("GNN model and scalers loaded.")
+
+        logging.info("RoadNetwork instance created.")
 
     async def async_init(
             self,
-            start_time: Optional[datetime.datetime] = None,
-            end_time: Optional[datetime.datetime] = None
+            start_time: Optional[datetime] = None,
+            end_time: Optional[datetime] = None
     ) -> None:
-        """
-        Asynchronously initialize the database connection, load road data,
-        and build the NetworkX graph.
-        """
-        logging.info("Starting asynchronous initialization of RoadNetwork.")
-
-        # Initialize the asynchronous DB connection.
-        await self.processor.initialize_db()
-        logging.info("Database connection initialized.")
-
-        # Query and load data from all collections (only road data is available).
-        await self.processor.load_all_data(start_time, end_time)
-        logging.info("Road data loaded from database.")
-
-        # Process and merge the data into one GeoDataFrame (only road data used).
+        # Load DB data and build GeoDataFrame
+        self.processor = await RoadDataProcessor.async_init(start_time, end_time)
+        await self.processor.load_all_data()
         self.gdf = self.processor.build_network_geodataframe()
-        if self.gdf is not None:
-            logging.info(f"GeoDataFrame built with {len(self.gdf)} records.")
-        else:
-            logging.warning("GeoDataFrame is empty after processing.")
 
-        # Build the graph from the GeoDataFrame.
+        # Build NetworkX graph
         self.build_graph()
-        logging.info("RoadNetwork asynchronous initialization complete.")
+        logging.info("RoadNetwork async_init complete.")
 
     def build_graph(self) -> None:
-        """
-        Build a NetworkX graph from the GeoDataFrame.
-        Iterates through each road record and adds an edge using its geometry.
-        """
+        if self.gdf is None:
+            raise RuntimeError("GeoDataFrame is not initialized.")
         self.graph = nx.Graph()
-        try:
-            for index, row in self.gdf.iterrows():
-                geom = row['geometry']
-                # Process only LineString geometries.
-                if geom.geom_type != 'LineString':
-                    continue
-                start = tuple(geom.coords[0])
-                end = tuple(geom.coords[-1])
-                # Use provided 'length' if available; otherwise, compute from geometry.
-                length = row.get('length', geom.length)
-                # Road classification based on number of lane
-                lane: int = row.get('lane', 1)
-                # Check if it is raining
-                rain: float = row.get('rain', 0)
-                # Calculate penalty based on the number of lane
-                penalty = self._compute_penalty(lane)
-                # Calculate car travel time if average speed is provided.
-                default_car_avg_speed = row.get('avgSpeed', 0)
-                car_avg_speed = default_car_avg_speed
-                if rain:
-                    car_avg_speed = default_car_avg_speed - penalty
-                car_travel_time = length / (car_avg_speed / 3.6) if car_avg_speed > 0 else 0
-                # Get weather condition
-                weather_condition = row.get('weather_condition', 'empty')
-                self.graph.add_edge(
-                    start,
-                    end,
-                    length=length,
-                    car_travel_time=car_travel_time,
-                    weather_condition=weather_condition
-                )
-                logging.debug(
-                    f"Edge aggiunto da {start} a {end}: length={length}, "
-                    f"car_travel_time={car_travel_time}, weather_condition={weather_condition}"
-                )
-            logging.info(
-                f"Graph built with {self.graph.number_of_nodes()} nodes and {self.graph.number_of_edges()} edges.")
-        except Exception as e:
-            logging.error(f"Error building graph: {e}")
-            raise
 
-    @staticmethod
-    def _compute_penalty(lane: int) -> int:
-        """
-        Calcola una penalità basata sul numero di corsie.
-        :param lane: Numero di corsie nel segmento.
-        :return: Valore di penalità.
-        """
-        if lane == 1:
-            return 8
-        elif lane == 2:
-            return 12
-        else:
-            return 20
+        for _, row in self.gdf.iterrows():
+            geom = row.geometry
+            if geom.geom_type != "LineString":
+                continue
+            u, v = tuple(geom.coords[0]), tuple(geom.coords[-1])
+            length = row.get("length", geom.length)
+            lane = int(row.get("lane", 1))
+            rain = float(row.get("rain", 0))
+            hour = int(row.get("hour", 0))
+            avgSpeed = float(row.get("avgSpeed", 30.0))
+            weather_condition = row.get("weather_condition", "clear")
+
+            # Predict travel time (GNN)
+            predicted_car_time = None
+            if self.use_gnn_weights:
+                feature_vector = prepare_feature_vector(length, hour, lane, rain, avgSpeed)
+                predicted_car_time = predict_travel_time(
+                    self.model, self.feature_scaler, self.target_scaler, feature_vector, self.device
+                )
+
+            # Formula-based travel time
+            default_speed = avgSpeed
+            rate = self._get_penalty_rate(lane, hour) if rain else 0.0
+            car_speed = default_speed * (1 + rate)
+            safe_speed = max(car_speed, MIN_SPEED_KMH)
+            car_time = length / (safe_speed / 3.6)
+
+            # Add edge to graph
+            self.graph.add_edge(
+                u, v,
+                length=length,
+                car_travel_time=car_time,
+                predicted_car_travel_time=predicted_car_time,
+                hour=hour,
+                lane=lane,
+                rain=rain,
+                avgSpeed=avgSpeed,
+                weather_condition=weather_condition,
+            )
+
+    def _load_penalties(self) -> pd.DataFrame:
+        path = os.path.join(self.DATA_PATH, "penalties.csv")
+        self._penalties_df = pd.read_csv(path)
+        return self._penalties_df
+
+    def _get_penalty_rate(self, lane: int, hour: int) -> float:
+        df = self._load_penalties()
+        try:
+            rate = df.loc[df["hour"] == hour, str(lane)].iloc[0]
+        except IndexError:
+            raise ValueError(f"No penalty rate for hour={hour}, lane={lane}")
+        return rate / 100
 
     def _find_nearest_node(self, point: Tuple[float, float]) -> Tuple[float, float]:
-        """
-        Find the node in the graph closest to the given point using Euclidean distance.
-
-        :param point: Tuple (x, y) representing the query point.
-        :return: The nearest node (x, y) in the graph.
-        """
-        nearest: Optional[Tuple[float, float]] = None
-        min_dist = float('inf')
+        nearest, min_dist = None, float("inf")
         for node in self.graph.nodes():
-            dist = euclidean_distance(node, point)
-            if dist < min_dist:
-                min_dist = dist
-                nearest = node
+            d = euclidean_distance(node, point)
+            if d < min_dist:
+                min_dist, nearest = d, node
         if nearest is None:
-            logging.error("No node found in the graph for the given point.")
             raise ValueError("No node found in the graph.")
-        logging.debug(f"Nearest node to {point} is {nearest} with distance {min_dist}")
         return nearest
 
     def ensure_node(self, point: Tuple[float, float]) -> Tuple[float, float]:
-        """
-        Ensure that the point is a node in the graph. If not, return the nearest node.
-
-        :param point: Tuple (x, y) representing the point.
-        :return: A node (x, y) present in the graph.
-        """
-        if point not in self.graph.nodes():
-            nearest = self._find_nearest_node(point)
-            logging.info(f"Point {point} not found among nodes. Using nearest node: {nearest}")
-            return nearest
-        logging.debug(f"Point {point} exists in the graph.")
-        return point
+        return point if point in self.graph else self._find_nearest_node(point)

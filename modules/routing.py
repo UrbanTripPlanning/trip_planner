@@ -26,7 +26,13 @@ class TransportMode(Enum):
 
 
 class RoutePlanner:
-    def __init__(self, network: RoadNetwork, transport_mode: TransportMode = TransportMode.FOOT, algorithm: str = 'A*'):
+    def __init__(
+            self,
+            network: RoadNetwork,
+            transport_mode: TransportMode = TransportMode.FOOT,
+            algorithm: str = 'A*',
+            GCN: bool = False
+    ):
         """
         Initialize the RoutePlanner.
 
@@ -38,6 +44,7 @@ class RoutePlanner:
         self.graph = network.graph
         self.transport_mode = transport_mode
         self.algorithm = algorithm
+        self.GCN = GCN
         logging.info(
             f"Initialized RoutePlanner with transport_mode: {self.transport_mode.mode_name}, algorithm: {self.algorithm}")
 
@@ -57,8 +64,11 @@ class RoutePlanner:
         """
         # Select cost attribute based on transport mode.
         if self.transport_mode == TransportMode.CAR:
-            cost = 'car_travel_time'
-            logging.info("Using cost attribute 'car_travel_time' for Car mode.")
+            if self.GCN:
+                cost = 'predicted_car_travel_time'
+            else:
+                cost = 'car_travel_time'
+            logging.info(f"Using cost attribute {cost} for Car mode.")
         else:
             cost = 'length'
             logging.info("Using cost attribute 'length' for Foot/Bike mode.")
