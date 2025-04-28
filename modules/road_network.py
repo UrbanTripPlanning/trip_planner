@@ -1,43 +1,38 @@
 import os
+import torch
 import logging
+import pandas as pd
 import networkx as nx
 import geopandas as gpd
-import pandas as pd
-import torch
-
 from datetime import datetime
 from typing import Tuple, Optional
 
-from modules.road_data_processor import RoadDataProcessor
-from modules.inferer import prepare_feature_vector, predict_travel_time, load_model_and_scalers
 from utils import euclidean_distance
-
-MIN_SPEED_KMH = 0.1  # km/h floor to avoid division-by-zero
-FEATURE_KEYS = ["length", "hour", "lane", "rain", "avgSpeed"]
+from modules.road_data_processor import RoadDataProcessor
+from modules.edge_weight_predictor import EdgeWeightPredictor
 
 
 class RoadNetwork:
     """
     Manages a road network:
       - async init via RoadDataProcessor
-      - optionally runs GNN inference to produce per-edge travel times
-      - builds a NetworkX graph with either formula-based or model-based travel times
+      - optionally runs GCN or STGCN inference to produce per-edge weights
+      - builds a NetworkX graph with either formula-based or learned weights
     """
-    DATA_PATH: str = os.getenv("DATA_PATH", ".")
+    DATA_PATH: str = os.getenv("DATA_PATH", "./data")
+    MIN_SPEED_KMH = 0.1  # km/h floor to avoid division-by-zero
 
-    def __init__(self, use_gnn_weights: bool = False) -> None:
-        self.use_gnn_weights = use_gnn_weights
+    def __init__(self, GNN: str = "") -> None:
+        self.GNN = GNN  # "": False; "GCN" or "STGCN": True
         self.processor: Optional[RoadDataProcessor] = None
         self.gdf: Optional[gpd.GeoDataFrame] = None
         self.graph: Optional[nx.Graph] = None
 
         # Initialize GNN model and scalers if requested
-        if self.use_gnn_weights:
+        if self.GNN:
             self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-            self.model, self.feature_scaler, self.target_scaler = (
-                load_model_and_scalers("./GCN/models", self.device)
-            )
-            logging.info("GNN model and scalers loaded.")
+            self.predictor = EdgeWeightPredictor(self.GNN, self.device)
+            logging.info(f"{self.GNN} model and scalers loaded.")
 
         logging.info("RoadNetwork instance created.")
 
@@ -70,34 +65,32 @@ class RoadNetwork:
             rain = float(row.get("rain", 0))
             hour = int(row.get("hour", 0))
             avgSpeed = float(row.get("avgSpeed", 30.0))
-            weather_condition = row.get("weather_condition", "clear")
-
-            # Predict travel time (GNN)
-            predicted_car_time = None
-            if self.use_gnn_weights:
-                feature_vector = prepare_feature_vector(length, hour, lane, rain, avgSpeed)
-                predicted_car_time = predict_travel_time(
-                    self.model, self.feature_scaler, self.target_scaler, feature_vector, self.device
-                )
-
-            # Formula-based travel time
-            default_speed = avgSpeed
             rate = self._get_penalty_rate(lane, hour) if rain else 0.0
-            car_speed = default_speed * (1 + rate)
-            safe_speed = max(car_speed, MIN_SPEED_KMH)
+            safe_speed = max(avgSpeed * (1 + rate), self.MIN_SPEED_KMH)
             car_time = length / (safe_speed / 3.6)
 
-            # Add edge to graph
+            if self.GNN:
+                weight = self.predictor.predict(
+                    length=length,
+                    hour=hour,
+                    lane=lane,
+                    rain=rain,
+                    avgSpeed=avgSpeed,
+                    u=u, v=v
+                )
+            else:
+                weight = None
+
             self.graph.add_edge(
                 u, v,
                 length=length,
                 car_travel_time=car_time,
-                predicted_car_travel_time=predicted_car_time,
+                weight=weight,
                 hour=hour,
                 lane=lane,
                 rain=rain,
                 avgSpeed=avgSpeed,
-                weather_condition=weather_condition,
+                weather_condition=row.get("weather_condition", "N/A"),
             )
 
     def _load_penalties(self) -> pd.DataFrame:

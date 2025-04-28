@@ -31,7 +31,7 @@ class RoutePlanner:
             network: RoadNetwork,
             transport_mode: TransportMode = TransportMode.FOOT,
             algorithm: str = 'A*',
-            GCN: bool = False
+            GNN: str = ''
     ):
         """
         Initialize the RoutePlanner.
@@ -44,7 +44,7 @@ class RoutePlanner:
         self.graph = network.graph
         self.transport_mode = transport_mode
         self.algorithm = algorithm
-        self.GCN = GCN
+        self.GNN = GNN
         logging.info(
             f"Initialized RoutePlanner with transport_mode: {self.transport_mode.mode_name}, algorithm: {self.algorithm}")
 
@@ -64,8 +64,8 @@ class RoutePlanner:
         """
         # Select cost attribute based on transport mode.
         if self.transport_mode == TransportMode.CAR:
-            if self.GCN:
-                cost = 'predicted_car_travel_time'
+            if self.GNN:
+                cost = 'weight'
             else:
                 cost = 'car_travel_time'
             logging.info(f"Using cost attribute {cost} for Car mode.")

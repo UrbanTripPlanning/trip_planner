@@ -6,7 +6,7 @@ Workflow:
 2. Initialize the RoadNetwork instance asynchronously, which loads road and traffic data from the database, processes it, and builds a NetworkX graph.
 3. Instantiate a RoutePlanner for different transport modes (e.g., walking and driving).
    - For Foot mode, the cost is based on route length.
-   - For Car mode, the cost is based on travel time (using the 'car_travel_time' field).
+   - For Car mode, the cost is based on travel time (using the 'car_travel_time' field or 'weight' field, computed by GNN).
 4. Compute routes between specified source and target points.
 5. Display route statistics (including computed start and end times if time constraints are provided) and plot the routes.
 
@@ -26,14 +26,14 @@ async def main():
 
     # Settings
     algorithm = 'A*'  # 'A*' or 'Dijkstra'
-    GCN = False  # Compute weights with GCN
-    start_time = datetime(2025, 5, 13, 13, 0, 0)  # Planned departure datetime; None means immediate departure.
+    GNN = 'GCN'  # 'STGCN' or 'GCN': True; '': False
+    start_time = datetime(2025, 5, 13, 1, 0, 0)  # Planned departure datetime; None means immediate departure.
     end_time = None  # Desired arrival datetime; None means no deadline.
     source_point = (7.705189, 45.068828)  # Departure point (longitude, latitude)
     target_point = (7.657668, 45.065126)  # Arrival point (longitude, latitude)
 
     # Initialize the road network (loads data and builds the graph).
-    network = RoadNetwork(GCN)
+    network = RoadNetwork(GNN)
     await network.async_init(start_time, end_time)
 
     # Compute and plot the walking route.
@@ -43,7 +43,7 @@ async def main():
     walking_planner.plot_path(walking_path, path_color="blue")
 
     # Compute and plot the driving route.
-    driving_planner = RoutePlanner(network, transport_mode=TransportMode.CAR, algorithm=algorithm, GCN=GCN)
+    driving_planner = RoutePlanner(network, transport_mode=TransportMode.CAR, algorithm=algorithm, GNN=GNN)
     driving_path, _ = driving_planner.compute(source_point, target_point)
     driving_planner.display_statistics(driving_path, start_time, end_time)
     driving_planner.plot_path(driving_path, path_color="red")

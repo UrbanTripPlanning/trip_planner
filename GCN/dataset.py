@@ -37,7 +37,7 @@ class RoadNetworkSnapshotDataset(Dataset):
         for path in self.snapshot_files:
             data = torch.load(path, weights_only=False)
 
-            feature_keys = ["length", "hour", "lane", "rain", "avgSpeed"]  # <-- aggiornato
+            feature_keys = ["length", "hour", "lane", "rain", "avgSpeed"]
             target_key = "car_travel_time"
 
             feature_indices = [data.edge_attr_keys.index(k) for k in feature_keys]
@@ -77,7 +77,7 @@ class RoadNetworkSnapshotDataset(Dataset):
         path = self.snapshot_files[idx]
         data = torch.load(path, weights_only=False)
 
-        feature_keys = ["length", "hour", "lane", "rain", "avgSpeed"]  # <-- aggiornato
+        feature_keys = ["length", "hour", "lane", "rain", "avgSpeed"]
         target_key = "car_travel_time"
 
         feature_indices = [data.edge_attr_keys.index(k) for k in feature_keys]
