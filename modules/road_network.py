@@ -15,67 +15,72 @@ from modules.edge_weight_predictor import EdgeWeightPredictor
 class RoadNetwork:
     """
     Manages a road network:
-      - async init via RoadDataProcessor
-      - optionally runs GCN or STGCN inference to produce per-edge weights
-      - builds a NetworkX graph with either formula-based or learned weights
+    - Loads traffic data via RoadDataProcessor.
+    - Optionally applies GCN/STGCN to predict edge weights.
+    - Builds a NetworkX graph with road segments and travel features.
     """
-    DATA_PATH: str = os.getenv("DATA_PATH", "./data")
-    MIN_SPEED_KMH = 0.1  # km/h floor to avoid division-by-zero
+    DATA_PATH: str = os.getenv("DATA_PATH")
 
-    def __init__(self, GNN: str = "") -> None:
-        self.GNN = GNN  # "": False; "GCN" or "STGCN": True
+    def __init__(self, gnn_model: str = "") -> None:
+        """
+        Initialize RoadNetwork with optional GNN-based edge predictor.
+
+        :param gnn_model: Model type ("GCN", "STGCN", or empty string to disable).
+        """
+        self.gnn_model = gnn_model
         self.processor: Optional[RoadDataProcessor] = None
-        self.gdf: Optional[gpd.GeoDataFrame] = None
+        self.traffic_gdf: Optional[gpd.GeoDataFrame] = None
         self.graph: Optional[nx.Graph] = None
+        self.predictor: Optional[EdgeWeightPredictor] = None
 
-        # Initialize GNN model and scalers if requested
-        if self.GNN:
-            self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-            self.predictor = EdgeWeightPredictor(self.GNN, self.device)
-            logging.info(f"{self.GNN} model and scalers loaded.")
+        if self.gnn_model:
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            self.predictor = EdgeWeightPredictor(self.gnn_model, self.device)
+            logging.info(f"{self.gnn_model} model and scalers loaded.")
 
         logging.info("RoadNetwork instance created.")
 
     async def async_init(
-            self,
-            start_time: Optional[datetime] = None,
-            end_time: Optional[datetime] = None
+        self,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None
     ) -> None:
-        # Load DB data and build GeoDataFrame
+        """
+        Asynchronously initialize the network:
+        - Load traffic data via RoadDataProcessor.
+        - Build the underlying NetworkX graph.
+        """
         self.processor = await RoadDataProcessor.async_init(start_time, end_time)
         await self.processor.load_all_data()
-        self.gdf = self.processor.build_network_geodataframe()
-
-        # Build NetworkX graph
+        self.traffic_gdf = self.processor.traffic_gdf
         self.build_graph()
-        logging.info("RoadNetwork async_init complete.")
+        logging.info("RoadNetwork async initialization complete.")
 
     def build_graph(self) -> None:
-        if self.gdf is None:
-            raise RuntimeError("GeoDataFrame is not initialized.")
+        """
+        Constructs the NetworkX graph from the GeoDataFrame.
+        Uses predicted or rule-based weights depending on the configuration.
+        """
+        if self.traffic_gdf is None:
+            raise RuntimeError("Traffic GeoDataFrame is not initialized.")
+
         self.graph = nx.Graph()
 
-        for _, row in self.gdf.iterrows():
+        for _, row in self.traffic_gdf.iterrows():
             geom = row.geometry
             if geom.geom_type != "LineString":
                 continue
-            u, v = tuple(geom.coords[0]), tuple(geom.coords[-1])
-            length = row.get("length", geom.length)
-            lane = int(row.get("lane", 1))
-            rain = float(row.get("rain", 0))
-            hour = int(row.get("hour", 0))
-            avgSpeed = float(row.get("avgSpeed", 30.0))
-            rate = self._get_penalty_rate(lane, hour) if rain else 0.0
-            safe_speed = max(avgSpeed * (1 + rate), self.MIN_SPEED_KMH)
-            car_time = length / (safe_speed / 3.6)
 
-            if self.GNN:
+            u, v = tuple(geom.coords[0]), tuple(geom.coords[-1])
+            speed = float(row.get("speed", 1))
+            length = float(row.get("length", 1))
+            time = float(row.get("time", 1))
+
+            if self.gnn_model and self.predictor:
                 weight = self.predictor.predict(
+                    speed=speed,
                     length=length,
-                    hour=hour,
-                    lane=lane,
-                    rain=rain,
-                    avgSpeed=avgSpeed,
+                    time=time,
                     u=u, v=v
                 )
             else:
@@ -83,38 +88,36 @@ class RoadNetwork:
 
             self.graph.add_edge(
                 u, v,
+                speed=speed,
                 length=length,
-                car_travel_time=car_time,
-                weight=weight,
-                hour=hour,
-                lane=lane,
-                rain=rain,
-                avgSpeed=avgSpeed,
-                weather_condition=row.get("weather_condition", "N/A"),
+                time=time,
+                weight=weight
             )
 
-    def _load_penalties(self) -> pd.DataFrame:
-        path = os.path.join(self.DATA_PATH, "penalties.csv")
-        self._penalties_df = pd.read_csv(path)
-        return self._penalties_df
+    def _get_nearest_node(self, point: Tuple[float, float]) -> Tuple[float, float]:
+        """
+        Finds the nearest graph node to a given point using Euclidean distance.
 
-    def _get_penalty_rate(self, lane: int, hour: int) -> float:
-        df = self._load_penalties()
-        try:
-            rate = df.loc[df["hour"] == hour, str(lane)].iloc[0]
-        except IndexError:
-            raise ValueError(f"No penalty rate for hour={hour}, lane={lane}")
-        return rate / 100
+        :param point: Tuple (lon, lat) to search from.
+        :return: The nearest node in the graph.
+        """
+        if self.graph is None or not self.graph.nodes:
+            raise RuntimeError("Graph is empty. Cannot find nearest node.")
 
-    def _find_nearest_node(self, point: Tuple[float, float]) -> Tuple[float, float]:
         nearest, min_dist = None, float("inf")
         for node in self.graph.nodes():
             d = euclidean_distance(node, point)
             if d < min_dist:
                 min_dist, nearest = d, node
-        if nearest is None:
-            raise ValueError("No node found in the graph.")
         return nearest
 
-    def ensure_node(self, point: Tuple[float, float]) -> Tuple[float, float]:
-        return point if point in self.graph else self._find_nearest_node(point)
+    def snap_to_graph(self, point: Tuple[float, float]) -> Tuple[float, float]:
+        """
+        Ensures a point belongs to the graph. If not, snaps to the nearest node.
+
+        :param point: Tuple (lon, lat)
+        :return: Valid node in the graph.
+        """
+        if self.graph is None:
+            raise RuntimeError("Graph not initialized.")
+        return point if point in self.graph else self._get_nearest_node(point)

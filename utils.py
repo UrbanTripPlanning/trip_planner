@@ -31,8 +31,17 @@ def read_env():
 def get_hour(time: datetime = None):
     if time is None:
         time = datetime.now()
-    current_hour = (time.hour + (1 if time.minute >= 30 else 0)) % 24
+    current_hour = (time.hour + (1 if time.minute >= 50 else 0)) % 24
     return current_hour
+
+
+def get_time_info(time: datetime = None):
+    if time is None:
+        time = datetime.now()
+    current_hour = (time.hour + (1 if time.minute >= 50 else 0)) % 24
+    weekday = (time.isoweekday())  # 1 = Monday, 7 = Sunday
+    month = time.month  # 1 = January, 12 = December
+    return current_hour, weekday, month
 
 
 @lru_cache(maxsize=None)
@@ -45,3 +54,10 @@ def euclidean_distance(p1: Tuple[float, float], p2: Tuple[float, float]) -> floa
     :return: Euclidean distance.
     """
     return math.hypot(p1[0] - p2[0], p1[1] - p2[1])
+
+
+def format_dt(dt: datetime) -> str:
+    """
+    Format datetime to string for statistics.
+    """
+    return dt.strftime('%Y-%m-%d %H:%M:%S')

@@ -4,53 +4,51 @@ import pandas as pd
 import geopandas as gpd
 from datetime import datetime
 from shapely.geometry import shape
-from typing import Optional, List, Dict, Any
+from typing import Optional, List
 
 from modules.db_manager import Database
-from utils import get_hour
+from utils import get_time_info
 
 
 class RoadDataProcessor:
     """
-    Asynchronous data loader and processor for road, traffic, and weather data.
+    Asynchronous data loader and processor for traffic network and weather data.
     """
 
     # Environment variable names for MongoDB collections and data path
-    ROAD_COLLECTION: str = os.getenv('ROAD_COLLECTION')
-    TRAFFIC_COLLECTION: str = os.getenv('TRAFFIC_COLLECTION')
+    GRAPH_COLLECTION: str = os.getenv('GRAPH_COLLECTION')
     DATA_PATH: str = os.getenv('DATA_PATH')
 
     def __init__(self) -> None:
-        # Raw document storage
-        self.road_docs: List[dict] = []
-        self.traffic_docs: List[dict] = []
+        if not all([self.GRAPH_COLLECTION, self.DATA_PATH]):
+            raise EnvironmentError("One or more required environment variables are not set.")
 
-        # Processed data containers
-        self.road_gdf: Optional[gpd.GeoDataFrame] = None
-        self.traffic_df: Optional[pd.DataFrame] = None
-        self.weather_ser: Optional[pd.Series] = None
+        # Raw and processed data containers
+        self.network_docs: List[dict] = []
+        self.traffic_gdf: Optional[pd.DataFrame] = None
 
         # Time-related parameters
         self.start_time: Optional[datetime] = None
         self.end_time: Optional[datetime] = None
         self.reference_time: datetime = datetime.now()
         self.hour: int = 0
-
-        # Internal cache for the weather CSV
-        self._weather_df: Optional[pd.DataFrame] = None
+        self.weekday: int = 1
+        self.month: int = 1
+        self.rain_flag: bool = False
 
         logging.info("RoadDataProcessor instance created (not yet initialized).")
 
     @classmethod
     async def async_init(
-            cls,
-            start_time: Optional[datetime] = None,
-            end_time: Optional[datetime] = None
+        cls,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None
     ) -> "RoadDataProcessor":
         """
         Asynchronous factory method:
-        1. Initialize database connection.
-        2. Determine reference_time and hour to use for queries.
+        1. Initializes database connection.
+        2. Sets reference_time based on input.
+        3. Extracts temporal parameters and computes rain condition.
         """
         instance = cls()
         await Database.initialize()
@@ -65,143 +63,83 @@ class RoadDataProcessor:
         elif end_time is not None:
             instance.reference_time = end_time
 
-        # Compute the hour for traffic aggregation
-        instance.hour = get_hour(instance.reference_time)
-        logging.info(f"Reference time set to {instance.reference_time!r}, hour = {instance.hour}")
+        # Compute temporal fields
+        hour, weekday, month = get_time_info(instance.reference_time)
+        instance.hour = hour
+        instance.weekday = weekday
+        instance.month = month
 
+        # Compute rain flag
+        instance.rain_flag = instance.compute_rain_flag()
+
+        logging.info(f"Reference time set to {instance.reference_time!r}")
         return instance
 
-    @staticmethod
-    async def query_collection(
-            collection: str,
-            query: Optional[Dict[str, Any]] = None,
-            method: str = "find",
-            pipeline: Optional[List[Dict[str, Any]]] = None
-    ) -> List[dict]:
+    def compute_rain_flag(self) -> int:
         """
-        Unified async interface to MongoDB:
-        - find, find_one, or aggregate.
-        Returns a list of documents (possibly empty).
+        Loads weather data and determines the rain flag (0 or 1)
+        for the timestamp closest to `reference_time`.
         """
-        if query is None:
-            query = {}
-        if method == "find":
-            docs = await Database.find(collection, query)
-        elif method == "find_one":
-            doc = await Database.find_one(collection, query)
-            docs = [doc] if doc else []
-        elif method == "aggregate":
-            docs = await Database.aggregate(collection, pipeline or [])
-        else:
-            raise ValueError(f"Unsupported query method: {method}")
-        logging.info(f"{method.upper()} returned {len(docs)} documents from {collection}")
-        return docs
+        path = os.path.join(self.DATA_PATH, "weather.csv")
+        if not os.path.isfile(path):
+            logging.error(f"Missing weather file: {path}")
+            raise FileNotFoundError(f"Weather file not found at {path}")
 
-    async def load_all_data(self) -> None:
-        """
-        Master loader that:
-        1. Queries and processes road data.
-        2. Processes weather data.
-        3. Queries and processes traffic data.
-        """
-        # 1. Road data
-        self.road_docs = await self.query_collection(self.ROAD_COLLECTION)
-        self.road_gdf = self.process_road_data(self.road_docs)
+        df = pd.read_csv(path, index_col='datetime', parse_dates=True)
+        idx = df.index.get_indexer([self.reference_time], method='nearest')[0]
+        if idx < 0 or idx >= len(df):
+            raise IndexError(f"No weather record near {self.reference_time!r}")
+        rain = int(df.iloc[idx]['rain'])
+        if rain not in (0, 1):
+            raise ValueError(f"Unexpected rain flag value: {rain}")
+        return rain
 
-        # 2. Weather data
-        self.weather_ser = self.process_weather_data()
-
-        # 3. Traffic data
-        self.traffic_docs = await self._query_traffic_data()
-        self.traffic_df = self.process_traffic_data(self.traffic_docs)
-
-    async def _query_traffic_data(self) -> List[dict]:
+    async def query_traffic_data(self) -> List[dict]:
         """
-        Aggregate traffic data by 'hour' field and return raw documents.
+        Queries traffic data from the graph collection filtered by hour, week, and month.
+        Chooses fields based on rain condition.
         """
+        speed = "$speed_clear" if not self.rain_flag else "$speed_rain"
+        time = "$time_clear" if not self.rain_flag else "$time_rain"
         pipeline = [
-            {"$match": {"hour": self.hour}},
-            {"$group": {
-                "_id": "$road_id",
-                "avgSpeed": {"$avg": "$avg_speed"}
+            {"$match": {
+                "hour": self.hour,
+                "week": self.weekday,
+                "month": self.month,
+            }},
+            {"$project": {
+                "_id": 0,
+                "road_id": 1,
+                "speed": speed,
+                "length": 1,
+                "time": time,
+                "geometry": 1,
             }}
         ]
-        return await self.query_collection(
-            collection=self.TRAFFIC_COLLECTION,
+        return await Database.query(
+            collection=self.GRAPH_COLLECTION,
             method="aggregate",
             pipeline=pipeline
         )
 
     @staticmethod
-    def process_road_data(docs: List[dict]) -> gpd.GeoDataFrame:
+    def build_traffic_geodataframe(docs: List[dict]) -> gpd.GeoDataFrame:
         """
-        Convert raw road documents to a GeoDataFrame,
-        parsing GeoJSON geometries into Shapely objects.
+        Converts raw traffic documents into a GeoDataFrame.
+        Parses geometries using Shapely.
         """
         if not docs:
-            logging.warning("No road documents provided; returning empty GeoDataFrame.")
-            return gpd.GeoDataFrame()
+            logging.warning("No traffic data found; returning empty GeoDataFrame.")
+            return gpd.GeoDataFrame(columns=['road_id', 'speed', 'length', 'time', 'road_type'], geometry=[])
+
         df = pd.DataFrame(docs)
-        df['geometry'] = df['geometry'].apply(lambda g: shape(g))
+        df['geometry'] = df['geometry'].apply(shape)
         return gpd.GeoDataFrame(df, geometry='geometry')
 
-    @staticmethod
-    def process_traffic_data(docs: List[dict]) -> pd.DataFrame:
+    async def load_all_data(self) -> None:
         """
-        Convert raw traffic documents to a DataFrame and
-        rename '_id' to 'road_id' for merging.
+        Main entry point to load and process traffic data.
+        Queries the network and constructs a GeoDataFrame.
         """
-        if not docs:
-            logging.warning("No traffic documents provided; returning empty DataFrame.")
-            return pd.DataFrame(columns=['road_id', 'avgSpeed'])
-        df = pd.DataFrame(docs).rename(columns={'_id': 'road_id'})
-        return df
-
-    def _load_weather_df(self) -> pd.DataFrame:
-        """
-        Load and cache the weather CSV as a DataFrame indexed by datetime.
-        """
-        if self._weather_df is None:
-            path = os.path.join(self.DATA_PATH, "weather.csv")
-            if not os.path.isfile(path):
-                raise FileNotFoundError(f"Weather file not found at {path}")
-            df = pd.read_csv(path, index_col='datetime', parse_dates=True)
-            self._weather_df = df
-        return self._weather_df
-
-    def process_weather_data(self) -> pd.Series:
-        """
-        Return the weather row closest to reference_time as a Series.
-        """
-        df = self._load_weather_df()
-        idx = df.index.get_indexer([self.reference_time], method='nearest')[0]
-        if idx < 0 or idx >= len(df):
-            raise IndexError(f"No weather record near {self.reference_time!r}")
-        return df.iloc[idx]
-
-    def build_network_geodataframe(self) -> gpd.GeoDataFrame:
-        """
-        Merge road GeoDataFrame, traffic DataFrame, and weather Series
-        into a single GeoDataFrame for analysis or export.
-        """
-        if self.road_gdf is None:
-            raise RuntimeError("Road GeoDataFrame not initialized. Call load_all_data() first.")
-
-        # Start from road GeoDataFrame
-        network_gdf = self.road_gdf.copy()
-
-        # Merge traffic data if available
-        if self.traffic_df is not None and not self.traffic_df.empty:
-            network_gdf = network_gdf.merge(self.traffic_df,
-                                            on="road_id",
-                                            how="left")
-
-        # Add weather columns
-        if self.weather_ser is not None:
-            network_gdf['weather_condition'] = self.weather_ser['weather_condition']
-            network_gdf['rain'] = self.weather_ser['rain']
-
-        # Add hour column
-        network_gdf['hour'] = self.hour
-
-        return network_gdf
+        self.network_docs = await self.query_traffic_data()
+        self.traffic_gdf = self.build_traffic_geodataframe(self.network_docs)

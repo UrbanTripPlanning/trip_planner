@@ -1,16 +1,12 @@
 """
-This module serves as the entry point for the route planning application.
+Entry point for the route planning application.
 
 Workflow:
-1. Read environment variables and set up logging and output directories.
-2. Initialize the RoadNetwork instance asynchronously, which loads road and traffic data from the database, processes it, and builds a NetworkX graph.
-3. Instantiate a RoutePlanner for different transport modes (e.g., walking and driving).
-   - For Foot mode, the cost is based on route length.
-   - For Car mode, the cost is based on travel time (using the 'car_travel_time' field or 'weight' field, computed by GNN).
-4. Compute routes between specified source and target points.
-5. Display route statistics (including computed start and end times if time constraints are provided) and plot the routes.
-
-The optional time parameters allow planning for a future departure (start_time), a deadline arrival (end_time), or immediate departure when both are None.
+1. Load environment and check output folders.
+2. Initialize RoadNetwork with or without GNN.
+3. Instantiate RoutePlanner for a selected TransportMode.
+4. Compute and plot optimal route.
+5. Display route statistics (optional start/end time).
 """
 
 import asyncio
@@ -23,30 +19,45 @@ from modules.routing import RoutePlanner, TransportMode
 
 
 async def main():
+    start = datetime.now()
 
-    # Settings
-    algorithm = 'A*'  # 'A*' or 'Dijkstra'
-    GNN = 'GCN'  # 'STGCN' or 'GCN': True; '': False
-    start_time = datetime(2025, 5, 13, 1, 0, 0)  # Planned departure datetime; None means immediate departure.
-    end_time = None  # Desired arrival datetime; None means no deadline.
-    source_point = (7.705189, 45.068828)  # Departure point (longitude, latitude)
-    target_point = (7.657668, 45.065126)  # Arrival point (longitude, latitude)
+    # ========== SETTINGS ==========
+    algorithm = 'A*'           # or 'Dijkstra'
+    gnn_model = ''             # 'GCN' or 'STGCN' or ''
+    transport_mode = TransportMode.CAR  # FOOT, BIKE, or CAR
+    use_gnn = bool(gnn_model)  # Enable GNN weights for CAR only
+    start_time = None  # datetime(2025, 5, 1, 8, 30)
+    end_time = None    # datetime(2025, 5, 1, 9, 0)
+    source_point = (7.705189, 45.068828)   # Departure (lon, lat)
+    target_point = (7.657668, 45.065126)   # Arrival (lon, lat)
+    # ==============================
 
-    # Initialize the road network (loads data and builds the graph).
-    network = RoadNetwork(GNN)
+    # Step 1: Load road network and build graph
+    network = RoadNetwork(gnn_model if transport_mode == TransportMode.CAR else '')
     await network.async_init(start_time, end_time)
 
-    # Compute and plot the walking route.
-    walking_planner = RoutePlanner(network, transport_mode=TransportMode.FOOT, algorithm=algorithm)
-    walking_path, _ = walking_planner.compute(source_point, target_point)
-    walking_planner.display_statistics(walking_path, start_time, end_time)
-    walking_planner.plot_path(walking_path, path_color="blue")
+    # Step 2: Plan route
+    planner = RoutePlanner(
+        network=network,
+        transport_mode=transport_mode,
+        algorithm_name=algorithm,
+        use_gnn=use_gnn if transport_mode == TransportMode.CAR else False
+    )
 
-    # Compute and plot the driving route.
-    driving_planner = RoutePlanner(network, transport_mode=TransportMode.CAR, algorithm=algorithm, GNN=GNN)
-    driving_path, _ = driving_planner.compute(source_point, target_point)
-    driving_planner.display_statistics(driving_path, start_time, end_time)
-    driving_planner.plot_path(driving_path, path_color="red")
+    path, stats = planner.compute(
+        source_point=source_point,
+        target_point=target_point,
+        start_time=start_time,
+        end_time=end_time
+    )
+
+    if path:
+        planner.plot_path(path, path_color="blue" if transport_mode != TransportMode.CAR else "red")
+        planner.display_statistics()
+    else:
+        print("No route found.")
+
+    print(f"Finished in {datetime.now() - start}")
 
 
 if __name__ == "__main__":
