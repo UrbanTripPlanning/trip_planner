@@ -150,7 +150,7 @@ class RoutePlanner:
         elapsed = time.perf_counter() - start
         logging.info(f"Route computed in {elapsed:.4f} seconds")
 
-        self.stats = self.compute_statistics(path, start_time, end_time, elapsed)
+        self.stats = self.compute_statistics(path, start_time, end_time)
         return path, self.stats
 
     def plot_path(
@@ -180,8 +180,7 @@ class RoutePlanner:
         self,
         path: List[Tuple[float, float]],
         start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None,
-        elapsed: Optional[float] = None
+        end_time: Optional[datetime] = None
     ) -> Dict[str, Any]:
         """
         Analyze the computed path to generate total length, duration, and time window.
@@ -217,8 +216,6 @@ class RoutePlanner:
         else:
             stats["start_time"] = format_dt(now)
             stats["end_time"] = format_dt(now + timedelta(seconds=stats["duration"]))
-
-        stats["compute_time"] = round(elapsed or 0.0, 4)
 
         # Round length and duration
         stats["length"] = round(stats["length"], 2)

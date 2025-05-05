@@ -1,7 +1,6 @@
 import os
 import torch
 import logging
-import pandas as pd
 import networkx as nx
 import geopandas as gpd
 from datetime import datetime
@@ -9,7 +8,7 @@ from typing import Tuple, Optional
 
 from utils import euclidean_distance
 from modules.road_data_processor import RoadDataProcessor
-from modules.edge_weight_predictor import EdgeWeightPredictor
+from GCN.inference import EdgeWeightPredictor
 
 
 class RoadNetwork:
@@ -35,7 +34,7 @@ class RoadNetwork:
 
         if self.gnn_model:
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-            self.predictor = EdgeWeightPredictor(self.gnn_model, self.device)
+            self.predictor = EdgeWeightPredictor(model_path="./GCN/models/edge_autoencoder.pt", device=self.device)
             logging.info(f"{self.gnn_model} model and scalers loaded.")
 
         logging.info("RoadNetwork instance created.")
@@ -76,23 +75,16 @@ class RoadNetwork:
             length = float(row.get("length", 1))
             time = float(row.get("time", 1))
 
-            if self.gnn_model and self.predictor:
-                weight = self.predictor.predict(
-                    speed=speed,
-                    length=length,
-                    time=time,
-                    u=u, v=v
-                )
-            else:
-                weight = None
-
             self.graph.add_edge(
                 u, v,
                 speed=speed,
                 length=length,
                 time=time,
-                weight=weight
             )
+
+            if self.gnn_model and self.predictor:
+                weights = self.predictor.infer_edge_weights(self.graph)
+                self.predictor.assign_weights_to_graph(self.graph, weights)
 
     def _get_nearest_node(self, point: Tuple[float, float]) -> Tuple[float, float]:
         """

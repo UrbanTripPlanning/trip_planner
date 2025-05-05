@@ -1,110 +1,63 @@
-import os
 import torch
-from torch_geometric.data import Dataset, Data
-from sklearn.preprocessing import StandardScaler
-import numpy as np
-import pickle
+import re
+import os
+from datetime import datetime
+from torch.utils.data import Dataset
+from torch_geometric.transforms import LineGraph
 
 
-class RoadNetworkSnapshotDataset(Dataset):
+class InMemoryGraphDataset(Dataset):
     """
-    PyTorch Geometric Dataset with normalized edge features including avgSpeed, and cyclical encoding of 'hour'.
+    Load all the .pt snapshots into RAM,
+    transform each graph to line-graph and set
+    x = edge_attr, edge_attr = edge_attr.
     """
 
-    def __init__(self, root: str, transform=None, pre_transform=None):
-        super().__init__(root, transform, pre_transform)
-        self.snapshot_files = sorted([
-            os.path.join(root, fname)
-            for fname in os.listdir(root)
-            if fname.endswith('.pt')
+    def __init__(self, snapshot_dir: str):
+        self.paths = sorted([
+            os.path.join(snapshot_dir, fn)
+            for fn in os.listdir(snapshot_dir)
+            if fn.endswith(".pt")
         ])
-        self.feature_scaler = StandardScaler()
-        self.target_scaler = StandardScaler()
+        if not self.paths:
+            raise RuntimeError(f"No snapshots in {snapshot_dir}")
+        print(f"[dataset] Loading {len(self.paths)} snapshots into RAM…")
 
-        # Pre-fit scalers
-        self._fit_scalers()
+        self.data_list = []
+        lg = LineGraph()  # line-graph transform
 
-        # Save scalers
-        os.makedirs('models', exist_ok=True)
-        with open('models/feature_scaler.pkl', 'wb') as f:
-            pickle.dump(self.feature_scaler, f)
-        with open('models/target_scaler.pkl', 'wb') as f:
-            pickle.dump(self.target_scaler, f)
+        for p in self.paths:
+            orig = torch.load(p, weights_only=False)
+            L = lg(orig)  # build the line-graph
+            # explicitly assigns edge_attr on L
+            L.x = orig.edge_attr  # feature per each "node-edge"
+            L.edge_attr = orig.edge_attr
+            self.data_list.append(L)
 
-    def _fit_scalers(self):
-        features = []
-        targets = []
-        for path in self.snapshot_files:
-            data = torch.load(path, weights_only=False)
+        print("[dataset] Loaded all snapshots.")
 
-            feature_keys = ["length", "hour", "lane", "rain", "avgSpeed"]
-            target_key = "car_travel_time"
+    def __len__(self):
+        return len(self.data_list)
 
-            feature_indices = [data.edge_attr_keys.index(k) for k in feature_keys]
-            target_index = data.edge_attr_keys.index(target_key)
+    def __getitem__(self, idx):
+        return self.data_list[idx]
 
-            raw_features = data.edge_attr[:, feature_indices].numpy()
-            raw_targets = data.edge_attr[:, target_index].numpy()
 
-            # Transform hour into cyclical features
-            hour = raw_features[:, 1]
-            hour_sin = np.sin(2 * np.pi * hour / 24)
-            hour_cos = np.cos(2 * np.pi * hour / 24)
-
-            # Final features with avgSpeed
-            augmented_features = np.column_stack([
-                raw_features[:, 0],  # length
-                hour_sin,            # sin(hour)
-                hour_cos,            # cos(hour)
-                raw_features[:, 2],  # lane
-                raw_features[:, 3],  # rain
-                raw_features[:, 4],  # avgSpeed
-            ])
-
-            features.append(augmented_features)
-            targets.append(raw_targets)
-
-        features = np.vstack(features)
-        targets = np.hstack(targets)
-
-        self.feature_scaler.fit(features)
-        self.target_scaler.fit(targets.reshape(-1, 1))
-
-    def len(self) -> int:
-        return len(self.snapshot_files)
-
-    def get(self, idx: int) -> Data:
-        path = self.snapshot_files[idx]
-        data = torch.load(path, weights_only=False)
-
-        feature_keys = ["length", "hour", "lane", "rain", "avgSpeed"]
-        target_key = "car_travel_time"
-
-        feature_indices = [data.edge_attr_keys.index(k) for k in feature_keys]
-        target_index = data.edge_attr_keys.index(target_key)
-
-        raw_features = data.edge_attr[:, feature_indices].numpy()
-        raw_target = data.edge_attr[:, target_index].numpy()
-
-        # Transform hour into cyclical features
-        hour = raw_features[:, 1]
-        hour_sin = np.sin(2 * np.pi * hour / 24)
-        hour_cos = np.cos(2 * np.pi * hour / 24)
-
-        augmented_features = np.column_stack([
-            raw_features[:, 0],  # length
-            hour_sin,
-            hour_cos,
-            raw_features[:, 2],  # lane
-            raw_features[:, 3],  # rain
-            raw_features[:, 4],  # avgSpeed
-        ])
-
-        # Normalize
-        norm_features = self.feature_scaler.transform(augmented_features)
-        norm_target = self.target_scaler.transform(raw_target.reshape(-1, 1)).flatten()
-
-        data.edge_features = torch.tensor(norm_features, dtype=torch.float)
-        data.y = torch.tensor(norm_target, dtype=torch.float)
-
-        return data
+def time_based_split(dataset):
+    """
+    It divides the snapshots into 10 months train, 1 month val, 1 month test.
+    """
+    dates = []
+    pat = re.compile(r"snapshot_[^_]+_(\d{8})T\d{2}\.pt$")
+    for p in dataset.paths:
+        m = pat.search(p)
+        dates.append(datetime.strptime(m.group(1), "%Y%m%d"))
+    months = sorted({(d.year, d.month) for d in dates})
+    assert len(months) >= 12, "Need at least one year of data!"
+    tr_m = months[:10];
+    va_m = months[10:11];
+    te_m = months[11:12]
+    tr_idx = [i for i, d in enumerate(dates) if (d.year, d.month) in tr_m]
+    va_idx = [i for i, d in enumerate(dates) if (d.year, d.month) in va_m]
+    te_idx = [i for i, d in enumerate(dates) if (d.year, d.month) in te_m]
+    return tr_idx, va_idx, te_idx
