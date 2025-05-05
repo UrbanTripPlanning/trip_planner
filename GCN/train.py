@@ -19,7 +19,7 @@ def train(
         bottleneck_dim: int = 1
 ):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f"▶ Training on {device}\n")
+    print(f"Training on {device}\n")
 
     # 1) Loading dataset and split
     full_ds = InMemoryGraphDataset(snapshot_dir)
@@ -44,7 +44,7 @@ def train(
         model.load_state_dict(ck['model'])
         optim.load_state_dict(ck['optim'])
         start_ep, best_val = ck['epoch'] + 1, ck['best_val']
-        print(f"↻ Resuming from epoch {start_ep}, best_val(MSE)={best_val:.4f}\n")
+        print(f"Resuming from epoch {start_ep}, best_val(MSE)={best_val:.4f}\n")
 
     # 5) AMP scaler
     from torch.cuda.amp import autocast, GradScaler
@@ -104,7 +104,7 @@ def train(
             best_val = avg_va_mse
             no_improve = 0
             torch.save(model.state_dict(), model_path)
-            print(f"✔ Saved best model (MSE) at epoch {ep}: {model_path}")
+            print(f"Saved best model (MSE) at epoch {ep}: {model_path}")
         else:
             no_improve += 1
 
@@ -116,7 +116,7 @@ def train(
         }, ckpt_path)
 
         if no_improve >= patience:
-            print(f"⏱ Early stopping at epoch {ep} (no improvement for {patience} epochs)")
+            print(f"Early stopping at epoch {ep} (no improvement for {patience} epochs)")
             break
 
     # --- Final Test ---
@@ -145,7 +145,7 @@ def train(
     plt.grid(True);
     plt.tight_layout()
     plt.savefig(rmse_curve_path)
-    print(f"📈 RMSE curve saved: {rmse_curve_path}")
+    print(f"RMSE curve saved: {rmse_curve_path}")
 
     # --- Plot MAE learning curve ---
     plt.figure(figsize=(8, 5))
@@ -157,7 +157,7 @@ def train(
     plt.grid(True);
     plt.tight_layout()
     plt.savefig(mae_curve_path)
-    print(f"📈 MAE curve saved: {mae_curve_path}")
+    print(f"MAE curve saved: {mae_curve_path}")
 
     return model
 
