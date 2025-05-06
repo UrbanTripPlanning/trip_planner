@@ -82,9 +82,9 @@ class RoadNetwork:
                 time=time,
             )
 
-            if self.gnn_model and self.predictor:
-                weights = self.predictor.infer_edge_weights(self.graph)
-                self.predictor.assign_weights_to_graph(self.graph, weights)
+        if self.gnn_model and self.predictor:
+            weights = self.predictor.infer_edge_weights(self.graph)
+            self.predictor.assign_weights_to_graph(self.graph, weights)
 
     def _get_nearest_node(self, point: Tuple[float, float]) -> Tuple[float, float]:
         """
