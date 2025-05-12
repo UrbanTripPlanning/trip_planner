@@ -6,7 +6,7 @@ from datetime import datetime
 import os
 
 # Configure logging to save to a file
-os.makedirs("output", exist_ok=True)  # Create logging directory if it doesn't exist
+os.makedirs("../output", exist_ok=True)  # Create logging directory if it doesn't exist
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -17,14 +17,14 @@ logging.basicConfig(
 )
 
 # Define file paths (update these paths as per your file locations)
-shp_file_path = "./export_5t/RR_SVR_intersezione_area_studio_Polito_ridotto.shp"
-dbf_file_path = "./export_5t/RR_SVR_intersezione_area_studio_Polito_ridotto.dbf"
-shx_file_path = "./export_5t/RR_SVR_intersezione_area_studio_Polito_ridotto.shx"
-cpg_file_path = "./export_5t/RR_SVR_intersezione_area_studio_Polito_ridotto.cpg"
-prj_file_path = "./export_5t/RR_SVR_intersezione_area_studio_Polito_ridotto.prj"
-qmd_file_path = "./export_5t/RR_SVR_intersezione_area_studio_Polito_ridotto.qmd"
-csv_network_path = "./export_5t/RR_SVR_intersezione_area_studio_Polito.csv"
-csv_velocity_path = "./export_5t/export_polito_velocita_medie_feriali_nov2024.csv"
+shp_file_path = "../export_5t/RR_SVR_intersezione_area_studio_Polito_ridotto.shp"
+dbf_file_path = "../export_5t/RR_SVR_intersezione_area_studio_Polito_ridotto.dbf"
+shx_file_path = "../export_5t/RR_SVR_intersezione_area_studio_Polito_ridotto.shx"
+cpg_file_path = "../export_5t/RR_SVR_intersezione_area_studio_Polito_ridotto.cpg"
+prj_file_path = "../export_5t/RR_SVR_intersezione_area_studio_Polito_ridotto.prj"
+qmd_file_path = "../export_5t/RR_SVR_intersezione_area_studio_Polito_ridotto.qmd"
+csv_network_path = "../export_5t/RR_SVR_intersezione_area_studio_Polito.csv"
+csv_velocity_path = "../export_5t/export_polito_velocita_medie_feriali_nov2024.csv"
 # image_path = "./export_5t/area_studio_Polito.png"
 
 

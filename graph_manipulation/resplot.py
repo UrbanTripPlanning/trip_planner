@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 # Load data
-res = pd.read_csv('computation_time.csv')
+res = pd.read_csv('../astar_vs_dijkstra/computation_time.csv')
 
 # Set seaborn theme
 sns.set_theme(style="whitegrid", context="notebook", font_scale=1.2)

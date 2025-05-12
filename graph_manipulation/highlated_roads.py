@@ -86,7 +86,7 @@ ax.grid(False)
 plt.tight_layout()
 
 # Salva immagine
-output_path = "output/highlighted_roads.png"
+output_path = "../output/highlighted_roads.png"
 plt.savefig(output_path, dpi=300)
 plt.close()
 
