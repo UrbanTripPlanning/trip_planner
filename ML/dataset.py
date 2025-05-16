@@ -11,6 +11,7 @@ class InMemoryGraphDataset(Dataset):
     transform each graph to line-graph and set
     x = edge_attr, edge_attr = edge_attr.
     """
+
     def __init__(self, snapshot_dir: str):
         self.paths = sorted([
             os.path.join(snapshot_dir, fn)
@@ -26,9 +27,9 @@ class InMemoryGraphDataset(Dataset):
 
         for p in self.paths:
             orig = torch.load(p, weights_only=False)
-            L = lg(orig)            # build the line-graph
+            L = lg(orig)  # build the line-graph
             # explicitly assigns edge_attr on L
-            L.x = orig.edge_attr    # feature per each "node-edge"
+            L.x = orig.edge_attr  # feature per each "node-edge"
             L.edge_attr = orig.edge_attr
             self.data_list.append(L)
 
@@ -39,6 +40,7 @@ class InMemoryGraphDataset(Dataset):
 
     def __getitem__(self, idx):
         return self.data_list[idx]
+
 
 def time_based_split(dataset):
     """
@@ -51,8 +53,10 @@ def time_based_split(dataset):
         dates.append(datetime.strptime(m.group(1), "%Y%m%d"))
     months = sorted({(d.year, d.month) for d in dates})
     assert len(months) >= 12, "Need at least one year of data!"
-    tr_m = months[:10]; va_m = months[10:11]; te_m = months[11:12]
-    tr_idx = [i for i,d in enumerate(dates) if (d.year,d.month) in tr_m]
-    va_idx = [i for i,d in enumerate(dates) if (d.year,d.month) in va_m]
-    te_idx = [i for i,d in enumerate(dates) if (d.year,d.month) in te_m]
+    tr_m = months[:10];
+    va_m = months[10:11];
+    te_m = months[11:12]
+    tr_idx = [i for i, d in enumerate(dates) if (d.year, d.month) in tr_m]
+    va_idx = [i for i, d in enumerate(dates) if (d.year, d.month) in va_m]
+    te_idx = [i for i, d in enumerate(dates) if (d.year, d.month) in te_m]
     return tr_idx, va_idx, te_idx

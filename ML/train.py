@@ -10,7 +10,7 @@ from ML.dataset import InMemoryGraphDataset, time_based_split
 from ML.autoencoder import EdgeAutoEncoderMultiTask
 
 
-def train_multitask(
+def train(
         snapshot_dir: str,
         model_out: str,
         ckpt_out: str,
@@ -24,7 +24,7 @@ def train_multitask(
         scatter_path: str = None
 ):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f"▶ Training on {device}\n")
+    print(f"Training on {device}\n")
 
     # Dataset & split
     full_ds = InMemoryGraphDataset(snapshot_dir)
@@ -50,7 +50,7 @@ def train_multitask(
     best_va = float('inf')
     no_imp = 0
     if os.path.isfile(ckpt_out):
-        print(f"↻ Found checkpoint '{ckpt_out}', resuming training...")
+        print(f" Found checkpoint '{ckpt_out}', resuming training...")
         ckpt = torch.load(ckpt_out, map_location=device)
         model.load_state_dict(ckpt['model'])
         optim.load_state_dict(ckpt['optim'])
@@ -124,18 +124,18 @@ def train_multitask(
                 best_va = avg_va_mse
                 no_imp = 0
                 torch.save(model.state_dict(), model_out)
-                print(f" ✔ New best model saved to '{model_out}'")
+                print(f" New best model saved to '{model_out}'")
             else:
                 no_imp += 1
                 print(f" No improvement ({no_imp}/{patience})")
 
             # Early stopping
             if no_imp >= patience:
-                print(f"⏱ Early stopping at epoch {ep}")
+                print(f"Early stopping at epoch {ep}")
                 break
 
     except KeyboardInterrupt:
-        print("\n⚠️ Manual interruption detected! Saving current state...")
+        print("\nManual interruption detected! Saving current state...")
         torch.save({
             'epoch': ep,
             'model': model.state_dict(),
@@ -148,7 +148,7 @@ def train_multitask(
         return model
 
     # Final test
-    print("\n▶ Final testing on held-out month")
+    print("\nFinal testing on held-out month")
     model.load_state_dict(torch.load(model_out, map_location=device))
     model.eval()
     te_mse, te_mae = 0.0, 0.0
@@ -164,17 +164,17 @@ def train_multitask(
     avg_te_mse = te_mse / len(te_ld)
     avg_te_rmse = math.sqrt(avg_te_mse)
     avg_te_mae = te_mae / len(te_ld)
-    print(f" → Test    MSE: {avg_te_mse:.6f}, RMSE: {avg_te_rmse:.6f}, MAE: {avg_te_mae:.6f}")
+    print(f"Test    MSE: {avg_te_mse:.6f}, RMSE: {avg_te_rmse:.6f}, MAE: {avg_te_mae:.6f}")
 
     # Plotting
     if rmse_curve_path:
         plt.figure(figsize=(8, 5))
         plt.plot(train_time_rmse, label='Train RMSE')
         plt.plot(val_time_rmse, label='Val RMSE')
-        plt.xlabel('Epoch');
+        plt.xlabel('Epoch')
         plt.ylabel('RMSE')
-        plt.legend();
-        plt.grid(True);
+        plt.legend()
+        plt.grid(True)
         plt.tight_layout()
         plt.savefig(rmse_curve_path)
         print(f" RMSE curve saved to '{rmse_curve_path}'")
@@ -183,10 +183,10 @@ def train_multitask(
         plt.figure(figsize=(8, 5))
         plt.plot(train_time_mae, label='Train MAE')
         plt.plot(val_time_mae, label='Val MAE')
-        plt.xlabel('Epoch');
+        plt.xlabel('Epoch')
         plt.ylabel('MAE')
-        plt.legend();
-        plt.grid(True);
+        plt.legend()
+        plt.grid(True)
         plt.tight_layout()
         plt.savefig(mae_curve_path)
         print(f" MAE curve saved to '{mae_curve_path}'")
@@ -196,10 +196,10 @@ def train_multitask(
         plt.scatter(true_times, pred_times, alpha=0.3)
         lims = [min(true_times + pred_times), max(true_times + pred_times)]
         plt.plot(lims, lims, 'r--')
-        plt.xlabel('True Time');
+        plt.xlabel('True Time')
         plt.ylabel('Predicted Time')
         plt.title('Pred vs True Travel Time')
-        plt.grid(True);
+        plt.grid(True)
         plt.tight_layout()
         plt.savefig(scatter_path)
         print(f" Scatter plot saved to '{scatter_path}'")
@@ -216,7 +216,7 @@ if __name__ == "__main__":
     RMSE_CURVE_OUT = './models/rmse_curve.png'
     SCATTER_OUT = './models/scatter.png'
 
-    train_multitask(
+    train(
         snapshot_dir=SNAPSHOT_DIR,
         model_out=MODEL_OUT,
         ckpt_out=CKPT_OUT,
