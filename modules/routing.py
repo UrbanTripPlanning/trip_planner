@@ -210,6 +210,42 @@ class RoutePlanner:
         plt.close(fig)
         logging.info(f"Saved route plot to '{out_path}'")
 
+    def _calculate_delay(self, G: nx.DiGraph, path: List[int]) -> float:
+        """
+        Compute total signal delay along the path using Webster's uniform delay:
+            d_base = ½ · C · (1 – g/C)²
+        Total delay = number_of_signals · d_base
+        """
+
+        # 1) Compute degree only for nodes on the path
+        node_degree = {
+            node: len(set(G.predecessors(node)) | set(G.successors(node)))
+            for node in path
+        }
+
+        # 2) Webster parameters
+        INTERSECTION_THRESHOLD = 3  # degree ≥ 3 is signalized
+        CYCLE_TIME = 90.0  # seconds
+        GREEN_RATIO = 0.4  # fraction of cycle that is green
+
+        # 3) Base delay per signal (Webster uniform delay, unsaturated)
+        d_base = 0.5 * CYCLE_TIME * (1 - GREEN_RATIO) ** 2
+
+        # 4) Count how many signals the path crosses
+        signal_count = sum(
+            1 for v in path[1:]  # skip the origin node
+            if node_degree.get(v, 0) >= INTERSECTION_THRESHOLD
+        )
+
+        # 5) Total delay is simply count × d_base
+        total_delay = signal_count * d_base
+
+        logging.info(
+            f"{signal_count} signals crossed, "
+            f"d_base={d_base:.2f}s; total_delay={total_delay:.2f}s"
+        )
+        return total_delay
+
     def compute_statistics(
         self,
         path: List[int],
@@ -237,6 +273,10 @@ class RoutePlanner:
             total_length += seg_len
             total_duration += seg_time
             logging.debug(f"Edge {u}->{v}: length={seg_len}, time={seg_time:.2f}s")
+
+        # apply traffic-light delay
+        if self.transport_mode == TransportMode.CAR:
+            total_duration += self._calculate_delay(G, path)
 
         now = datetime.now()
         if start_time and not end_time:
