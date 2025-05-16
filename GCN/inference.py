@@ -4,7 +4,7 @@ from torch_geometric.data import Data
 from torch_geometric.transforms import LineGraph
 from typing import List, Optional
 
-from MTGCN.autoencoder import EdgeAutoEncoderMultiTask
+from GCN.autoencoder import EdgeAutoEncoderMultiTask
 
 
 class EdgeWeightPredictor:

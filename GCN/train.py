@@ -6,8 +6,8 @@ from torch.cuda.amp import autocast, GradScaler
 from torch.utils.data import Subset
 from torch_geometric.loader import DataLoader
 
-from MTGCN.dataset import InMemoryGraphDataset, time_based_split
-from MTGCN.autoencoder import EdgeAutoEncoderMultiTask
+from GCN.dataset import InMemoryGraphDataset, time_based_split
+from GCN.autoencoder import EdgeAutoEncoderMultiTask
 
 
 def train_multitask(
