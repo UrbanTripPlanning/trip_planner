@@ -1,6 +1,7 @@
 import os, re
 from datetime import datetime
 import torch
+from torch.utils.data import Dataset
 from torch_geometric.transforms import LineGraph
 
 

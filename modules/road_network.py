@@ -8,7 +8,7 @@ from typing import Tuple, Optional
 
 from utils import euclidean_distance
 from modules.road_data_processor import RoadDataProcessor
-from GCN.inference import EdgeWeightPredictor
+from ML.inference import EdgeWeightPredictor
 
 
 class RoadNetwork:
@@ -24,7 +24,7 @@ class RoadNetwork:
         """
         Initialize RoadNetwork with optional GNN-based edge predictor.
 
-        :param gnn_model: Model type ("GCN", "STGCN", or empty to disable).
+        :param gnn_model: Model type ("GCN", "LSTM", or empty to disable).
         """
         self.gnn_model = gnn_model
         self.processor: Optional[RoadDataProcessor] = None
@@ -36,7 +36,7 @@ class RoadNetwork:
         if self.gnn_model:
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
             self.predictor = EdgeWeightPredictor(
-                model_path="./GCN/models/edge_autoencoder.pt",
+                model_path="./ML/models/edge_autoencoder.pt",
                 device=self.device
             )
             logging.info(f"{self.gnn_model} model and scalers loaded.")
