@@ -28,13 +28,6 @@ def read_env():
         print(f"An unexpected error occurred: {e}")  # Catch other exceptions
 
 
-def get_hour(time: datetime = None):
-    if time is None:
-        time = datetime.now()
-    current_hour = (time.hour + (1 if time.minute >= 50 else 0)) % 24
-    return current_hour
-
-
 def get_time_info(time: datetime = None):
     if time is None:
         time = datetime.now()

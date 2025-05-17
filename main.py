@@ -23,7 +23,7 @@ async def main():
 
     # ========== SETTINGS ==========
     algorithm = 'A*'           # or 'Dijkstra'
-    gnn_model = 'STGCN'             # 'GCN' or 'STGCN' or ''
+    gnn_model = 'GCN'             # 'GCN' or 'LSTM' or ''
     transport_mode = TransportMode.CAR  # FOOT, BIKE, or CAR
     use_gnn = bool(gnn_model)  # Enable GNN weights for CAR only
     start_time = datetime(2025, 9, 1, 00, 30)
