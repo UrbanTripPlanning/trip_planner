@@ -14,7 +14,7 @@ from utils import euclidean_distance, format_dt
 
 class TransportMode(Enum):
     FOOT = ("Foot", 4.3 / 3.6)  # 4.3 km/h → m/s
-    BIKE = ("Bike", 12 / 3.6)  # 12 km/h → m/s
+    BIKE = ("Bike", 15 / 3.6)  # 12 km/h → m/s
     CAR = ("Car", None)        # Use edge 'time' or 'weight'
 
     def __init__(self, mode_name: str, default_speed: Optional[float]):
