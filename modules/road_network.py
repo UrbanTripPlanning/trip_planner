@@ -9,6 +9,7 @@ from typing import Tuple, Optional
 from utils import euclidean_distance
 from modules.road_data_processor import RoadDataProcessor
 from GCN.inference import EdgeWeightPredictor
+from STGCN.inference import LSTMEdgeWeightPredictor
 
 
 class RoadNetwork:
@@ -33,12 +34,16 @@ class RoadNetwork:
         self.predictor: Optional[EdgeWeightPredictor] = None
 
         # Load GNN edge-weight predictor if requested
-        if self.gnn_model:
+        if self.gnn_model== "GCN":
+            print(f"cuda: {torch.cuda.is_available()}")
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-            self.predictor = EdgeWeightPredictor(
-                model_path="./GCN/models/edge_autoencoder.pt",
-                device=self.device
-            )
+            self.predictor = EdgeWeightPredictor(model_path="./GCN/models/edge_autoencoder.pt", device=self.device)
+            logging.info(f"{self.gnn_model} model and scalers loaded.")
+        
+        if self.gnn_model=='STGCN':
+            print(f"cudaLSTM: {torch.cuda.is_available()}")
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            self.predictor = LSTMEdgeWeightPredictor(model_path="./STGCN/models/lstm_autoencoder.pt", device=self.device)
             logging.info(f"{self.gnn_model} model and scalers loaded.")
 
         logging.info("RoadNetwork instance created.")
@@ -105,10 +110,10 @@ class RoadNetwork:
             )
 
         # If using GNN-based weight prediction, overwrite or augment edge weights
-        if self.gnn_model and self.predictor:
+        if (self.gnn_model=="STGCN" or self.gnn_model=="GCN") and self.predictor:
             weights = self.predictor.infer_edge_weights(self.graph)
             self.predictor.assign_weights_to_graph(self.graph, weights)
-
+            
     def _get_nearest_node(self, point: Tuple[float, float]) -> int:
         """
         Find the nearest graph node to a given point using Euclidean distance.
