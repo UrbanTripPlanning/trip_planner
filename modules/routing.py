@@ -12,6 +12,14 @@ from modules.road_network import RoadNetwork
 from utils import euclidean_distance, format_dt
 
 
+class Algorithm(Enum):
+    A = "A*"
+    DIJKSTRA = "DIJKSTRA"
+
+    def name(self):
+        return self._name_.lower()
+
+
 class TransportMode(Enum):
     FOOT = ("Foot", 4.3 / 3.6)  # 4.3 km/h → m/s
     BIKE = ("Bike", 15 / 3.6)  # 12 km/h → m/s

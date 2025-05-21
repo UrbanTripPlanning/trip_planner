@@ -29,6 +29,10 @@ class Model(Enum):
     def description(self):
         return self._description
 
+    @property
+    def use_gnn(self) -> bool:
+        return self is not Model.SIMPLE
+
 
 class RoadNetwork:
     """

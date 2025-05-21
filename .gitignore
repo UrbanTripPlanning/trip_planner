@@ -1,8 +1,6 @@
 .env
 output
 output/*
-data
-data/*
 .idea/
 *.iml
 .DS_Store

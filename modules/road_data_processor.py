@@ -1,13 +1,24 @@
-import logging
 import os
+import logging
 import pandas as pd
 import geopandas as gpd
+from enum import Enum
 from datetime import datetime
 from shapely.geometry import shape
 from typing import Optional, List
 
 from modules.db_manager import Database
 from utils import get_time_info
+
+
+class Weather(int, Enum):
+    CLEAR = 1
+    RAIN = 2
+    CLOUDS = 3
+    SNOW = 4
+
+    def name(self):
+        return self._name_.lower()
 
 
 class RoadDataProcessor:
@@ -17,11 +28,11 @@ class RoadDataProcessor:
 
     # MongoDB collection name and local data path (from environment)
     GRAPH_COLLECTION: str = os.getenv('GRAPH_COLLECTION')
-    DATA_PATH: str = os.getenv('DATA_PATH')
+    WEATHER_COLLECTION: str = os.getenv('WEATHER_COLLECTION')
 
     def __init__(self) -> None:
         # Ensure required environment variables are set
-        if not all([self.GRAPH_COLLECTION, self.DATA_PATH]):
+        if not all([self.GRAPH_COLLECTION, self.WEATHER_COLLECTION]):
             raise EnvironmentError("One or more required environment variables are not set.")
 
         # Raw documents fetched from the database
@@ -78,37 +89,42 @@ class RoadDataProcessor:
         instance.month = month
 
         # Determine rain_flag by inspecting the nearest weather record
-        instance.rain_flag = bool(instance.compute_rain_flag())
+        instance.rain_flag = bool(await instance.compute_rain_flag())
 
         logging.info(f"Reference time set to {instance.reference_time!r} "
                      f"(hour={instance.hour}, weekday={instance.weekday}, month={instance.month}, "
                      f"rain_flag={instance.rain_flag})")
         return instance
 
-    def compute_rain_flag(self) -> int:
+    async def query_weather_data(self) -> List[dict]:
         """
-        Load weather data and return the rain flag (0 or 1)
-        for the record closest to self.reference_time.
+        Fetches weather record matching the stored reference date and hour.
         """
-        weather_path = os.path.join(self.DATA_PATH, "weather.csv")
-        if not os.path.isfile(weather_path):
-            logging.error(f"Missing weather file: {weather_path}")
-            raise FileNotFoundError(f"Weather file not found at {weather_path}")
+        date_str = self.reference_time.date().isoformat()
+        pipeline = [
+            {"$match": {"date": date_str, "hour": self.hour}},
+            {"$project": {"_id": 0, "condition": 1}}
+        ]
+        docs = await Database.query(
+            collection=self.WEATHER_COLLECTION,
+            method="aggregate",
+            pipeline=pipeline
+        )
+        return docs
 
-        # Read the CSV with datetime index
-        df = pd.read_csv(weather_path, index_col='datetime', parse_dates=True)
-
-        # Find the index of the timestamp nearest to reference_time
-        idx = df.index.get_indexer([self.reference_time], method='nearest')[0]
-        if idx < 0 or idx >= len(df):
-            raise IndexError(f"No weather record near {self.reference_time!r}")
-
-        rain_val = df.iloc[idx]['rain']
-        rain_int = int(rain_val)
-        if rain_int not in (0, 1):
-            raise ValueError(f"Unexpected rain flag value: {rain_val}")
-
-        return rain_int
+    async def compute_rain_flag(self) -> int:
+        """
+        Determines whether it's raining based on the nearest weather record.
+        """
+        docs = await self.query_weather_data()
+        if not docs:
+            logging.warning("No weather data found; defaulting to clear.")
+            return 0
+        condition_value = docs[0].get("condition")
+        logging.info(f"Weather condition value from DB: {condition_value} ({Weather(condition_value).name()})")
+        rain_flag = 1 if condition_value == Weather.RAIN.value else 0
+        logging.info(f"Rain Flag computed as {rain_flag}")
+        return rain_flag
 
     async def query_traffic_data(self) -> List[dict]:
         """
