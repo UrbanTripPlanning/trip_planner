@@ -2,7 +2,7 @@ import torch
 import networkx as nx
 from typing import List, Optional
 
-from STGCN.lstm_autoencoder import LSTMAutoEncoder  
+from LSTM.lstm_autoencoder import LSTMAutoEncoder
 
 class LSTMEdgeWeightPredictor:
     """

@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 
+
 class LSTMAutoEncoder(nn.Module):
     """
     A simple LSTM-based autoencoder for sequence data.
@@ -34,21 +35,21 @@ class LSTMAutoEncoder(nn.Module):
             - Bottleneck vector: [batch, bottleneck_dim]
         """
         # Pass through encoder LSTM
-        _, (h_n, _) = self.encoder(x)         # h_n: [1, batch, hidden_size]
-        h = h_n.squeeze(0)                    # Remove LSTM layer dimension → [batch, hidden_size]
+        _, (h_n, _) = self.encoder(x)  # h_n: [1, batch, hidden_size]
+        h = h_n.squeeze(0)  # Remove LSTM layer dimension → [batch, hidden_size]
 
         # Bottleneck: compressed representation of input sequence
-        z = self.bottleneck(h)                # [batch, bottleneck_dim]
+        z = self.bottleneck(h)  # [batch, bottleneck_dim]
 
         # Decode from bottleneck by first expanding to hidden_size
-        dec_input = self.decoder_input(z)     # [batch, hidden_size]
-        dec_input = dec_input.unsqueeze(0)    # Add sequence dim → [1, batch, hidden_size]
+        dec_input = self.decoder_input(z)  # [batch, hidden_size]
+        dec_input = dec_input.unsqueeze(0)  # Add sequence dim → [1, batch, hidden_size]
         dec_input = dec_input.repeat(x.size(1), 1, 1).permute(1, 0, 2)  # [batch, seq_len, hidden_size]
 
         # Reconstruct sequence using decoder LSTM
         dec_out, _ = self.decoder(dec_input)  # [batch, seq_len, hidden_size]
 
         # Map hidden states to output features
-        out = self.output_layer(dec_out)      # [batch, seq_len, output_size]
+        out = self.output_layer(dec_out)  # [batch, seq_len, output_size]
 
         return out, z  # Return reconstructed sequence and bottleneck vector

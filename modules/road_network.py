@@ -2,14 +2,32 @@ import os
 import torch
 import logging
 import networkx as nx
+from enum import Enum
 import geopandas as gpd
 from datetime import datetime
 from typing import Tuple, Optional
 
 from utils import euclidean_distance
 from modules.road_data_processor import RoadDataProcessor
-from STGCN.inference import LSTMEdgeWeightPredictor
-from ML.inference import EdgeWeightPredictor
+from LSTM.inference import LSTMEdgeWeightPredictor
+from GCN.inference import EdgeWeightPredictor
+
+
+class Model(Enum):
+    GCN = ("GCN", "Multi Task Graph Convolutional Network.")
+    LSTM = ("LSTM", "Long Short-Term Memory.")
+    SIMPLE = ("SIMPLE", "Just routing, minimizing travel time (car) or length (bike, foot).")
+
+    def __init__(self, code, description):
+        self._code = code
+        self._description = description
+
+    def __str__(self):
+        return self._code
+
+    @property
+    def description(self):
+        return self._description
 
 
 class RoadNetwork:
@@ -25,7 +43,7 @@ class RoadNetwork:
         """
         Initialize RoadNetwork with optional GNN-based edge predictor.
 
-        :param gnn_model: Model type ("GCN", "LSTM", or empty to disable).
+        :param gnn_model: Model type ("GCN", "LSTM", "SIMPLE").
         """
         self.gnn_model = gnn_model
         self.processor: Optional[RoadDataProcessor] = None
@@ -34,27 +52,26 @@ class RoadNetwork:
         self.predictor: Optional[EdgeWeightPredictor] = None
 
         # Load GNN edge-weight predictor if requested
-        if self.gnn_model== "GCN":
-            print(f"cuda: {torch.cuda.is_available()}")
+        if self.gnn_model == "GCN":
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
             self.predictor = EdgeWeightPredictor(
-                model_path="./ML/models/edge_autoencoder.pt",
+                model_path="./GCN/models/edge_autoencoder.pt",
                 device=self.device
             )
-        
-        if self.gnn_model=='STGCN':
-            print(f"cudaLSTM: {torch.cuda.is_available()}")
-            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-            self.predictor = LSTMEdgeWeightPredictor(model_path="./STGCN/models/lstm_autoencoder.pt", device=self.device)
-            
-        logging.info(f"{self.gnn_model} model and scalers loaded.")
 
-        logging.info("RoadNetwork instance created.")
+        if self.gnn_model == 'LSTM':
+            self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            self.predictor = LSTMEdgeWeightPredictor(
+                model_path="./LSTM/models/lstm_autoencoder.pt",
+                device=self.device
+            )
+
+        logging.info(f"RoadNetwork instance created. Model: {self.gnn_model}")
 
     async def async_init(
-        self,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None
+            self,
+            start_time: Optional[datetime] = None,
+            end_time: Optional[datetime] = None
     ) -> None:
         """
         Asynchronously initialize the network:
@@ -113,10 +130,10 @@ class RoadNetwork:
             )
 
         # If using GNN-based weight prediction, overwrite or augment edge weights
-        if (self.gnn_model=="STGCN" or self.gnn_model=="GCN") and self.predictor:
+        if (self.gnn_model == "LSTM" or self.gnn_model == "GCN") and self.predictor:
             weights = self.predictor.infer_edge_weights(self.graph)
             self.predictor.assign_weights_to_graph(self.graph, weights)
-            
+
     def _get_nearest_node(self, point: Tuple[float, float]) -> int:
         """
         Find the nearest graph node to a given point using Euclidean distance.
