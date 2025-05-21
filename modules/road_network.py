@@ -7,7 +7,7 @@ import geopandas as gpd
 from datetime import datetime
 from typing import Tuple, Optional
 
-from utils import euclidean_distance
+from modules.utils import euclidean_distance
 from modules.road_data_processor import RoadDataProcessor
 from LSTM.inference import LSTMEdgeWeightPredictor
 from GCN.inference import EdgeWeightPredictor

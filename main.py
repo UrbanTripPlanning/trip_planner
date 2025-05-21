@@ -10,10 +10,10 @@ Workflow:
 """
 
 import asyncio
-from utils import read_env, setup_logger_and_check_folders
+from datetime import datetime
+from modules.utils import read_env, setup_logger_and_check_folders
 read_env()
 setup_logger_and_check_folders()
-from datetime import datetime
 from modules.road_network import RoadNetwork, Model
 from modules.routing import RoutePlanner, TransportMode, Algorithm
 

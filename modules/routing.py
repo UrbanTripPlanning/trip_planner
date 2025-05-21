@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from typing import Tuple, Optional, List, Dict, Any
 
 from modules.road_network import RoadNetwork
-from utils import euclidean_distance, format_dt
+from modules.utils import euclidean_distance, format_dt
 
 
 class Algorithm(Enum):

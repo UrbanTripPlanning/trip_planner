@@ -8,7 +8,7 @@ from shapely.geometry import shape
 from typing import Optional, List
 
 from modules.db_manager import Database
-from utils import get_time_info
+from modules.utils import get_time_info
 
 
 class Weather(int, Enum):
