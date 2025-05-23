@@ -108,6 +108,7 @@ The script will:
 
 ## Project Structure
 
+```text
 .  
 ├── .env.example  
 ├── main.py              # Entry point: customize parameters & run  
@@ -128,3 +129,4 @@ The script will:
 │   ├── inference.py  
 │   └── train.py  
 └── utils.py             # Helpers (env loader, logger, etc.)  
+```
