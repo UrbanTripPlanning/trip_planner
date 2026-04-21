@@ -1,34 +1,130 @@
 # Trip Planner
 
+Core algorithm for the TurinGO urban route planning project.
 A Python-based route planning application that lets you compute and visualize optimal routes for cars, bikes, or pedestrians. It supports classic shortest-path algorithms (A\* and Dijkstra) and can optionally leverage machine learning models (GCN or LSTM) to learn travel time weights for car routing.
 
 ---
 
-## Features
+> **Repository scope**
+>
+> This repository contains the **route-planning core** of a larger academic project.  
+> It focuses on graph construction, route computation, and experimental ML-based edge weighting.  
+> It does **not** include the full product stack. You can find the frontend in [here](https://github.com/UrbanTripPlanning/turin_go_frontend) and backend [here](https://github.com/UrbanTripPlanning/turin_go_backend).
 
-- **Graph Algorithms**: A*, Dijkstra
-- **Transport Modes**: Car (with optional GCN/LSTM weighting), Bike, Foot
-- **Machine Learning Models**:  
-  - **GCN**: Graph Convolutional Network  
-  - **LSTM**: Long Short-Term Memory autoencoder  
-- **Visualization**: Plot routes on a map
-- **Statistics**: Compute and display travel time, distance, and other metrics
+## Overview
 
----
+This project computes urban routes for **car**, **bike**, and **foot** travel on a preprocessed road network stored in MongoDB.
+
+The codebase supports:
+
+- directed road-network construction from road-segment data
+- shortest-path search with **A\*** and **Dijkstra**
+- basic weather-aware traffic field selection for car routing
+- experimental learned edge weighting through:
+  - a **Graph Convolutional Network (GCN)**
+  - an **LSTM autoencoder**
+- static route visualization and summary statistics export
+
+The repository is best understood as an **algorithmic/research backend prototype**, not a complete deployable navigation platform.
+
+## Implemented capabilities
+
+- Build a directed NetworkX road graph from MongoDB records
+- Select traffic fields based on time and weather context
+- Compute routes between two coordinates
+- Support three travel modes:
+  - **Car**
+  - **Bike**
+  - **Foot**
+- Use either:
+  - raw travel time
+  - experimental ML-derived edge weights
+- Plot the resulting path and save it to disk
+- Print route statistics including:
+  - total length
+  - total duration
+  - inferred start/end timestamps
+
+
+## Method summary
+
+### Graph representation
+
+Road segments are loaded from MongoDB and converted into a directed NetworkX graph.  
+Each edge stores route-relevant attributes such as:
+
+- `length`
+- `speed`
+- `time`
+- `geometry`
+
+Each node stores its spatial position for point snapping and path search.
+
+### Routing
+
+- **Car** mode uses directed routing and minimizes either:
+  - raw edge `time`, or
+  - experimental learned `weight`
+- **Bike** and **Foot** use an undirected view of the graph and minimize physical `length`
+- A fixed intersection-delay model is added to car-mode duration estimates
+
+### Experimental ML weighting
+
+Two model families are included:
+
+- **GCN**: graph-based travel-time prediction on a line-graph representation
+- **LSTM**: sequence-based embedding of edge-level temporal features
+
+
+## Input data expectations
+
+### MongoDB traffic / graph collection
+
+The runtime path expects a graph collection with fields consistent with the code path in `modules/road_data_processor.py`, including:
+
+- `road_id`
+- `tail`
+- `head`
+- `length`
+- `geometry`
+- `hour`
+- `week`
+- `month`
+- `speed_clear`
+- `speed_rain`
+- `time_clear`
+- `time_rain`
+
+`geometry` is expected to be GeoJSON-like and convertible with `shapely.geometry.shape`.
+
+### MongoDB weather collection
+
+The weather collection is expected to expose at least:
+
+- `date`
+- `hour`
+- `condition`
+
+The current implementation uses the weather record matching the chosen reference date/hour and derives a simple rain flag from `condition`.
+
+
 
 ## Prerequisites
 
 - Python 3.12
 - MongoDB instance (for road network storage)
+- pip / virtualenv
 - (Optional) GPU for faster model inference/training
 
 ---
 
 ## Installation
 
+### Setup
+
 1. **Clone or extract the repository**  
    ```bash
-   git clone https://your.repo.url/trip_planner.git
+   git clone git@github.com:UrbanTripPlanning/trip_planner.git
    cd trip_planner
 
 ---
